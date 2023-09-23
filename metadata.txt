@@ -1,0 +1,22 @@
+[general]
+name=Kadastr.Live tools bar
+qgisMinimumVersion=3.0
+description=Шукає місцезнаходження ділянки за кадастровим номером використовуючи API ресурсу Kadastr.Live. З додаткового: перегляд данних про ділянку на ресурсах Kadastr.Live та Land.gov.ua, а також перевірка площі ділянки за відомостями з ресурсу Kadastr.Live.
+version=0.2.1.1
+author=Стьопа
+email=brych92@gmail.com
+about=Пошук ділянки на карті Kadastr.Live за кадастровим номером ділянки.
+tracker=https://github.com/brych92/KL_Search_bar/issues
+repository=https://github.com/brych92/KL_Search_bar
+icon=icon.png
+experimental=true
+homepage=https://github.com/brych92/KL_Search_bar
+changelog=
+ Version 0.1:
+ * Перша версія
+ Version 0.2.1.1:
+ * Додано швидкий перехід до інформаційної сторінки про введену/вибрані ділянку/и на ресурсах kadastr.live та land.gov.ua
+ * Додано можливість перевірити площу введеної/вибраних ділянки/ок згідно відомостей з ресурсу kadastr.live
+ * Додано 15ти секундне відображення маркеру на знайденій ділянці
+ * Доданий автовибір масштабу приближення в залежності від площі ділянки
+ * Дрібні правки
