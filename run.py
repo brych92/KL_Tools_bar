@@ -485,7 +485,6 @@ class KL_Search_bar:
             return False
     
     def LandGo(self):
-        #print('LandGo')
         if self.validate_input(self.cadNum) and not self.isControlOrShift():
             cadnum=self.cadNum.text()
             QDesktopServices.openUrl(QUrl(f"https://e.land.gov.ua/back/cadaster/?cad_num={cadnum}"))
