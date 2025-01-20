@@ -40,14 +40,13 @@ class KL_Search_bar:
     def __init__(self, iface):
         self.marker_remove_timer=QTimer()
         self.iface = iface
-        self.first_time_flag=True #для виводу повідомлення про необхідність повторного пошуку
+        
         self.prevInput='' 
         self.markers=[]
         self.plugin_dir = os.path.dirname(__file__)
         self.folder_path=os.path.expanduser('~')
         self.actions = []
         self.all_toolbar_actions = []
-        self.isRun=None
         
         self.toolbar = self.get_toolbar() 
         self.toolbar.setToolTip("Пошук ділянки на карті Kadastr.Live за кадастровим номером")
@@ -76,7 +75,7 @@ class KL_Search_bar:
         self.actions.append(self.help_action)
         
         #Поле вводу
-        self.cadNum = QLineEdit()
+        self.cadNum = QLineEdit(self.toolbar)
         font_metrics=QFontMetrics(self.cadNum.font())
         self.cadNum.setFixedWidth(font_metrics.width('0' * 24))
         self.cadNum.setPlaceholderText("Введіть кадастровий номер...")
@@ -129,7 +128,7 @@ class KL_Search_bar:
 
         #Кнопка шарів з меню
         icon = QIcon(os.path.join(self.plugin_dir,"Icons","Layers.png"))
-        self.mapMenu = QMenu()
+        self.mapMenu = QMenu(self.toolbar)
         #Наповнення меню шарів
         first_flag=True
         for layername in self.layers_list:
@@ -256,8 +255,7 @@ class KL_Search_bar:
                 l_extent = transform.transformBoundingBox(l_extent)
                 if not l_extent.contains(self.iface.mapCanvas().extent()):
                     self.iface.mapCanvas().setExtent(l_extent)
-                #layer.triggerRepaint()  
-                self.first_time_flag=False
+                layer.triggerRepaint()
                 return layer #вихід якшо вже є такий шар
         
         layer = QgsVectorTileLayer("type=xyz&url="+url, name)
@@ -265,16 +263,16 @@ class KL_Search_bar:
             layer.loadNamedStyle(os.path.join(self.plugin_dir,"Styles",style))
         if extent:
             layer.setExtent(QgsRectangle(extent[0],extent[2],extent[1],extent[3]))
+
             crsDest = self.iface.mapCanvas().mapSettings().destinationCrs()
             transform = QgsCoordinateTransform(QgsCoordinateReferenceSystem(3857), crsDest, project)
-            l_extent = layer.extent()
-            l_extent = transform.transformBoundingBox(l_extent)
+            
+            l_extent = transform.transformBoundingBox(layer.extent())
             if not l_extent.contains(self.iface.mapCanvas().extent()):
                     self.iface.mapCanvas().setExtent(l_extent)
         
-        #layer.triggerRepaint()        
         QgsProject.instance().addMapLayer(layer)
-        self.first_time_flag=False
+        layer.triggerRepaint()        
         return layer
         
     def select_parcel_layer(self):   #повертає посилання на шар земельних ділянок, якщо він відсутній додає його
@@ -284,15 +282,12 @@ class KL_Search_bar:
 
         if layer and (layer.providerType()=='xyzvectortiles' or layer.providerType()=='vectortile') and layer.sourcePath()==url:#для того аби не ганяти всі шари, якшо вибраний правильний берем його
             project.layerTreeRoot().findLayer(layer.id()).setItemVisibilityChecked(True)
-            self.first_time_flag=False
             return layer
-        
             
         for layer in project.mapLayers().values():
             if (layer.providerType()=='xyzvectortiles' or layer.providerType()=='vectortile') and layer.sourcePath()==url:
                 self.iface.setActiveLayer(layer)
                 project.layerTreeRoot().findLayer(layer.id()).setItemVisibilityChecked(True)
-                self.first_time_flag=False
                 return layer
         
         #Якщо не знайдено шар, додаєм новий
@@ -325,7 +320,7 @@ class KL_Search_bar:
         if not isinstance(geometry, QgsGeometry):
             return None
         xform = QgsCoordinateTransform(inCRS, outCRS, QgsProject.instance())
-        output_geom=QgsGeometry(geometry)
+        output_geom = QgsGeometry(geometry)
         output_geom.transform(xform)
         return output_geom
     
