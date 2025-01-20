@@ -243,7 +243,7 @@ class KL_Search_bar:
         
         project = QgsProject.instance()
         for layer in project.mapLayers().values():
-            if (layer.providerType()=='xyzvectortiles' or layer.providerType()=='vectortile') and layer.sourcePath()==url:                
+            if type(layer)==QgsVectorTileLayer and layer.sourcePath()==url:                
                 self.iface.messageBar().pushMessage(f"Шар «{name}» вже наявний в проекті!", Qgis.Warning, 5)
                 
                 self.iface.setActiveLayer(layer)
