@@ -60,10 +60,10 @@ class KL_Search_bar:
             "Природньо-заповідний фонд":{"name":"Kadastr.Live-PZF","url":"https://cdn.kadastr.live/tiles/maps/dzk_pzf/{z}/{x}/{y}.pbf","style":"PZF.qml","extent":(2419945,4501250,5484118,6867501)},
             "Карта водних ресурсів":{"name":"Kadastr.Live-WaterMap","url":"https://cdn.kadastr.live/tiles/maps/dzk_water_map/{z}/{x}/{y}.pbf","style":"Water.qml","extent":(2419945,4501250,5484118,6867501)},
             "Sep1":{"name":"*"},
-            "Функц. призначення м.Київ":{"name":"Kadastr.Live-Kyiv_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-kiiv/{z}/{x}/{y}.pbf","style":"Functional.qml", "extent":(3370113,3422430,6490174,6540480)},
-            "Функц. призначення м.Житомир":{"name":"Kadastr.Live-Zhutomir_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-zhitomir/{z}/{x}/{y}.pbf","style":"Functional.qml","extent":(3178527,3204686,6477354,6502507)},
-            "Функц. призначення м.Хмельницький":{"name":"Kadastr.Live-Khmelnitskii_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-khmelnitskii/{z}/{x}/{y}.pbf","style":"Functional.qml","extent":(2992135,3018294,6332537,6357690)},
-            "Функц. призначення м.Рівне":{"name":"Kadastr.Live-Rivne_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-rivne/{z}/{x}/{y}.pbf","style":"Functional.qml","extent":(2909552,2933279,6541101,6563916)},
+            "Функц. призначення м.Київ":{"name":"Kadastr.Live-Kyiv_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-kiiv/{z}/{x}/{y}.pbf","style":"Kyiv_Func.qml", "extent":(3370113,3422430,6490174,6540480)},
+            "Функц. призначення м.Житомир":{"name":"Kadastr.Live-Zhutomir_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-zhitomir/{z}/{x}/{y}.pbf","style":"Zhutomir_Func.qml","extent":(3178527,3204686,6477354,6502507)},
+            "Функц. призначення м.Хмельницький":{"name":"Kadastr.Live-Khmelnitskii_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-khmelnitskii/{z}/{x}/{y}.pbf","style":"Khmelnitskii_Func.qml","extent":(2992135,3018294,6332537,6357690)},
+            "Функц. призначення м.Рівне":{"name":"Kadastr.Live-Rivne_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-rivne/{z}/{x}/{y}.pbf","style":"Rivne_Func.qml","extent":(2909552,2933279,6541101,6563916)},
             }
         
     def initGui(self):
@@ -260,7 +260,15 @@ class KL_Search_bar:
         
         layer = QgsVectorTileLayer("type=xyz&url="+url, name)
         if style:
-            layer.loadNamedStyle(os.path.join(self.plugin_dir,"Styles",style))
+            if float(Qgis.QGIS_VERSION[:4])<=3.27:
+                style27 = style.replace(".qml","_27.qml")
+                style_file = os.path.join(self.plugin_dir,"Styles",style27)
+                if os.path.exists(style_file):
+                    layer.loadNamedStyle(style_file)
+                else:
+                    layer.loadNamedStyle(os.path.join(self.plugin_dir,"Styles",style))
+            else:
+                layer.loadNamedStyle(os.path.join(self.plugin_dir,"Styles",style))
         if extent:
             layer.setExtent(QgsRectangle(extent[0],extent[2],extent[1],extent[3]))
 
@@ -485,8 +493,7 @@ class KL_Search_bar:
             QDesktopServices.openUrl(QUrl(f"https://e.land.gov.ua/back/cadaster/?cad_num={cadnum}"))
             return
         else:   
-            if not float(Qgis.QGIS_VERSION[:4])>3.27:
-                print("Весія не пройшла")                
+            if not float(Qgis.QGIS_VERSION[:4])>3.27:      
                 self.iface.messageBar().pushMessage("Відсутня ділянка для перевірки","Введіть правильний кадастровий номер!", level=Qgis.Warning, duration=5)
                 return
             layer=self.iface.activeLayer()
@@ -612,16 +619,10 @@ class KL_Search_bar:
             return True
         
         def go_to_selection(layer, latitude, longitude, area = 0.25):
-            
-            if not float(Qgis.QGIS_VERSION[:4])>3.27:
-                print("Весія не пройшла")                
-                go_to_coordinates(latitude, longitude, area)
-                return
-            else:
-                go_to_coordinates(latitude, longitude, 0)#чисто щоб хрестик поставило
-                canvas = self.iface.mapCanvas()
-                canvas.zoomToSelected(layer)
-                canvas.zoomScale(canvas.scale()*3)
+            go_to_coordinates(latitude, longitude, 0)#чисто щоб хрестик поставило
+            canvas = self.iface.mapCanvas()
+            canvas.zoomToSelected(layer)
+            canvas.zoomScale(canvas.scale()*3)
 
         if self.validate_input(self.cadNum):
             cadnum=self.cadNum.text()
@@ -634,6 +635,11 @@ class KL_Search_bar:
                 self.iface.messageBar().pushMessage("Помилка", "Не вдалося знайти ділянку з даним кадастровим номером. Можливо кадастровий номер відсутній, або наявні проблеми з доступом до сервісу Kadastr.live. Перевірте кадастровий номер, і спробуйте ще раз.", Qgis.Warning, 10)
                 return None
             
+            if not float(Qgis.QGIS_VERSION[:4])>3.27:
+                print("Весія не пройшла")                
+                go_to_coordinates(latitude, longitude, area)
+                return
+
             if self.isControlOrShift():
                 result=self.select_parcel(latitude, longitude, keep_selection=True)
             else:
@@ -654,8 +660,7 @@ class KL_Search_bar:
             self.get_area(cadnum,10,True)
             return
         else:
-            if not float(Qgis.QGIS_VERSION[:4])>3.27:
-                print("Весія не пройшла")                
+            if not float(Qgis.QGIS_VERSION[:4])>3.27:             
                 self.iface.messageBar().pushMessage("Відсутня ділянка для перевірки", "Введіть правильний кадастровий номер!", Qgis.Warning, 5)
                 return
             
