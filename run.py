@@ -4,17 +4,17 @@ from qgis.core import QgsCoordinateReferenceSystem, QgsApplication, QgsVectorTil
 from qgis.PyQt.QtGui import QIcon, QRegularExpressionValidator, QFontMetrics, QValidator, QDesktopServices, QColor
 from qgis.PyQt.QtWidgets import *
 from qgis.PyQt.QtCore import QRegularExpression as QRegExp
-from qgis.gui import QgsMapToolIdentifyFeature, QgsMapToolIdentify, QgsVertexMarker, QgsMessageBar, QgsMapCanvas
+from qgis.gui import QgsMapToolIdentifyFeature, QgsMapToolIdentify, QgsVertexMarker, QgsMessageBar
 import requests
 import json
 from requests.structures import CaseInsensitiveDict
 import re
 import os
 from .customClasses import LoadByExtent
-from typing import cast
 
 if float(Qgis.QGIS_VERSION[:4])>3.27:
     from qgis.core import QgsSelectionContext
+    #from qgis.gui import Qgis
 
 
 from qgis.core import QgsVectorLayer, QgsFeature, QgsGeometry, QgsPointXY, QgsProject, QgsApplication, QgsRectangle, QgsCoordinateTransform
@@ -37,43 +37,28 @@ class KL_Search_bar:
         
         return toolbar
     
-    def get_QGIS_ver(self):
-        ver1, ver2, ver3 = Qgis.QGIS_VERSION.split('-')[0].split('.')
-        if len(ver2)==1:
-            ver2=f'0{ver2}'
-        if len(ver3)==1:
-            ver3=f'0{ver3}'
-        return float(f'{ver1}.{ver2}{ver3}')
-
     def __init__(self, iface):
         self.marker_remove_timer=QTimer()
         self.iface = iface
-
-        self.QVersion = self.get_QGIS_ver()
-
+        self.first_time_flag=True #для виводу повідомлення про необхідність повторного пошуку
         self.prevInput='' 
         self.markers=[]
         self.plugin_dir = os.path.dirname(__file__)
         self.folder_path=os.path.expanduser('~')
         self.actions = []
         self.all_toolbar_actions = []
+        self.isRun=None
         
         self.toolbar = self.get_toolbar() 
         self.toolbar.setToolTip("Пошук ділянки на карті Kadastr.Live за кадастровим номером")
         
         self.layers_list={#звідси буде братися меню та посилання на шари
-            "Карта земельних ділянок":{"name":"Kadastr.Live-Parcels","url":"https://cdn.kadastr.live/tiles/maps/kadastr/land_polygons/{z}/{x}/{y}.pbf","style":"Parcels.qml","extent":(2419945,4501250,5484118,6867501)},#цей запис йде на кнопку
-            "АТУ":{"name":"Kadastr.Live-ATU","url":"https://cdn.kadastr.live/tiles/maps/dzk_atu/{z}/{x}/{y}.pbf","style":"ATU.qml","extent":(2419945,4501250,5484118,6867501)},
-            "Індексна карта":{"name":"Kadastr.Live-IndexMap","url":"https://cdn.kadastr.live/tiles/maps/dzk_index_map/{z}/{x}/{y}.pbf","style":"Index.qml","extent":(2419945,4501250,5484118,6867501)},
-            "Кадастрова карта":{"name":"Kadastr.Live-DZK","url":"https://cdn.kadastr.live/tiles/maps/kadastr/{z}/{x}/{y}.pbf","style":"Parcels.qml","extent":(2419945,4501250,5484118,6867501)},
-            "sep0":{"name":"*"},
-            "Природньо-заповідний фонд":{"name":"Kadastr.Live-PZF","url":"https://cdn.kadastr.live/tiles/maps/dzk_pzf/{z}/{x}/{y}.pbf","style":"PZF.qml","extent":(2419945,4501250,5484118,6867501)},
-            "Карта водних ресурсів":{"name":"Kadastr.Live-WaterMap","url":"https://cdn.kadastr.live/tiles/maps/dzk_water_map/{z}/{x}/{y}.pbf","style":"Water.qml","extent":(2419945,4501250,5484118,6867501)},
-            "Sep1":{"name":"*"},
-            "Функц. призначення м.Київ":{"name":"Kadastr.Live-Kyiv_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-kiiv/{z}/{x}/{y}.pbf","style":"Kyiv_Func.qml", "extent":(3370113,3422430,6490174,6540480)},
-            "Функц. призначення м.Житомир":{"name":"Kadastr.Live-Zhutomir_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-zhitomir/{z}/{x}/{y}.pbf","style":"Zhutomir_Func.qml","extent":(3178527,3204686,6477354,6502507)},
-            "Функц. призначення м.Хмельницький":{"name":"Kadastr.Live-Khmelnitskii_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-khmelnitskii/{z}/{x}/{y}.pbf","style":"Khmelnitskii_Func.qml","extent":(2992135,3018294,6332537,6357690)},
-            "Функц. призначення м.Рівне":{"name":"Kadastr.Live-Rivne_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-rivne/{z}/{x}/{y}.pbf","style":"Rivne_Func.qml","extent":(2909552,2933279,6541101,6563916)},
+            "Карта земельних ділянок":{"name":"Kadastr.Live-Parcels","url":"https://cdn.kadastr.live/tiles/maps/kadastr/land_polygons/{z}/{x}/{y}.pbf","style":"Parcels.qml"},#цей запис йде на кнопку
+            "Природньо-заповідний фонд":{"name":"Kadastr.Live-PZF","url":"https://cdn.kadastr.live/tiles/maps/dzk_pzf/{z}/{x}/{y}.pbf","style":"PZF.qml"},
+            "АТУ":{"name":"Kadastr.Live-ATU","url":"https://cdn.kadastr.live/tiles/maps/dzk_atu/{z}/{x}/{y}.pbf","style":"ATU.qml"},
+            "Індексна карта":{"name":"Kadastr.Live-IndexMap","url":"https://cdn.kadastr.live/tiles/maps/dzk_index_map/{z}/{x}/{y}.pbf","style":"Index.qml"},
+            "Карта водних ресурсів":{"name":"Kadastr.Live-WaterMap","url":"https://cdn.kadastr.live/tiles/maps/dzk_water_map/{z}/{x}/{y}.pbf","style":"Water.qml"},
+            "Кадастрова карта":{"name":"Kadastr.Live-DZK","url":"https://cdn.kadastr.live/tiles/maps/kadastr/{z}/{x}/{y}.pbf","style":"Parcels.qml"}            
             }
         
     def initGui(self):
@@ -85,23 +70,26 @@ class KL_Search_bar:
         self.actions.append(self.help_action)
         
         #Поле вводу
-        self.cadNum = QLineEdit(self.toolbar)
+        self.cadNum = QLineEdit()
         font_metrics=QFontMetrics(self.cadNum.font())
         self.cadNum.setFixedWidth(font_metrics.width('0' * 24))
         self.cadNum.setPlaceholderText("Введіть кадастровий номер...")
         self.cadNum.setValidator(QRegularExpressionValidator(QRegExp("[\d]{10}:[\d]{2}:[\d]{3}:[\d]{4}"),self.toolbar))
-        self.cadNum.textEdited.connect(self.handle_input)
-        self.cadNum.returnPressed.connect(self.Search)
+        self.cadNum.textEdited.connect(self.handle_input)        
         self.cadnum_action = self.toolbar.addWidget(self.cadNum)
         self.actions.append(self.cadnum_action)
 
         #Кнопка пошуку
         icon = QIcon(os.path.join(self.plugin_dir,"Icons","Search.png"))
-        self.searchParcel = QAction(icon, "Пошук по кадастровому номеру", self.iface.mainWindow())        
-        self.searchParcel.triggered.connect(self.Search)
-        self.searchParcel.setEnabled(True)
+        self.searchParcel = QAction(icon, "Спочатку додайте карту земельних ділянок",self.iface.mainWindow())        
+        self.searchParcel.triggered.connect(self.Search)        
+        self.searchParcel.setEnabled(False)
         self.toolbar.addAction(self.searchParcel)        
         self.actions.append(self.searchParcel)
+        
+        # self.searchParcel.setText("Пошук по кадастровому номеру")
+        # self.searchParcel.setEnabled(True)
+        # self.cadNum.returnPressed.connect(self.Search)
         
         #Кнопка перейти на КЛ
         icon = QIcon(os.path.join(self.plugin_dir,"Icons","KL-go.png"))
@@ -121,24 +109,24 @@ class KL_Search_bar:
         
         #Конпка показати площу
         icon = QIcon(os.path.join(self.plugin_dir,"Icons","Area.png"))
-        GetArea = QAction(icon, "Показати площу введеної ділянки", self.iface.mainWindow())
+        GetArea = QAction(icon, "Показати площу введеної ділянки",self.iface.mainWindow())
         GetArea.triggered.connect(self.GetArea)
         GetArea.setEnabled(True)
         self.toolbar.addAction(GetArea)
         self.actions.append(GetArea)
         
         #Кнопка завантажити в межах екрану
-        icon = QIcon(os.path.join(self.plugin_dir,"Icons","Download.png"))
-        LoadExtent = QAction(icon, "Завантажити ділянки в межах екрану в тимчасовий шар", self.iface.mainWindow())
-        LoadExtent.triggered.connect(self.LoadExtent)
-        LoadExtent.setEnabled(True)
-        self.toolbar.addAction(LoadExtent)
-        self.actions.append(LoadExtent)
-        self.LoadExtent=LoadExtent
+        # icon = QIcon(os.path.join(self.plugin_dir,"Icons","Download.png"))
+        # LoadExtent = QAction(icon, "Завантажити ділянки в межах екрану в тимчасовий шар",self.iface.mainWindow())
+        # LoadExtent.triggered.connect(self.LoadExtent)
+        # LoadExtent.setEnabled(True)
+        # self.toolbar.addAction(LoadExtent)
+        # self.actions.append(LoadExtent)
+        # self.LoadExtent=LoadExtent
 
         #Кнопка шарів з меню
         icon = QIcon(os.path.join(self.plugin_dir,"Icons","Layers.png"))
-        self.mapMenu = QMenu(self.toolbar)
+        self.mapMenu = QMenu()
         #Наповнення меню шарів
         first_flag=True
         for layername in self.layers_list:
@@ -146,10 +134,7 @@ class KL_Search_bar:
                 self.AddParcelsLayer=QAction(icon,layername)
                 first_flag=False
             else:                
-                if self.layers_list[layername]["name"]=='*':
-                    self.mapMenu.addSeparator()
-                else:
-                    self.mapMenu.addAction(layername)
+                self.mapMenu.addAction(layername)
         first_flag=None
         
         self.mapMenu.triggered.connect(self.addLayer)
@@ -162,8 +147,8 @@ class KL_Search_bar:
         for action in self.all_toolbar_actions:
             self.toolbar.addAction(action)
 
-    #дозволяє не заморочуватися з двокрапками при вводі кадастрового
-    def handle_input(self,text):
+
+    def handle_input(self,text):        #дозволяє не заморочуватися з двокрапками при вводі кадастрового
         if len(text)<len(self.prevInput):
             if self.prevInput[-1]==":":
                 self.prevInput=text[:-2]
@@ -184,33 +169,38 @@ class KL_Search_bar:
         self.remove_all_markers()
     
     def openHelpFile(self):        #відкриває хелп
-        pdf_file_path = os.path.join(self.plugin_dir,"Help","Help.pdf")
+        pdf_file_path = os.path.join(self.plugin_dir,"Help","Help.pdf")  
+        print(pdf_file_path)
         QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_file_path))
+        # import subprocess
+        # subprocess.Popen(['xdg-open', pdf_file_path])
     
     def LoadExtent(self):
         message_bar = self.iface.messageBar()
         
         def status_changed(status):
             if status==3:
-                message_bar.pushMessage("Успішно!", "Завантаження ділянок завершено!",Qgis.MessageLevel.Success, 5)
-                
+                print("Завершено!")
                 self.LoadExtent.setText("Завантажити ділянки в межах екрану в тимчасовий шар")
                 self.LoadExtent.setIcon(QIcon(os.path.join(self.plugin_dir,"Icons","Download.png")))
             if status==4:
-                if self.task.isCanceled():
-                    message_bar.pushMessage("Відмінено!", "Завантаження ділянок відмінено користувачем!",Qgis.MessageLevel.Info, 5)
+                if task.isCanceled():
+                    print("Відмінено!")
                 else:
-                    if self.task.get_failure():
-                        failure=self.task.get_failure()
+                    if task.get_failure():
+                        
+                        failure=task.get_failure()
                     else:
                         failure="Помилка, спробуйте ще раз!"
-                    message_bar.pushMessage(failure, Qgis.MessageLevel.Warning, 5)
-                    
+                    message_item = message_bar.pushMessage(failure, Qgis.MessageLevel.Warning, 5)
+                    print(failure)
+                    print(task.get_last_action())
                 self.LoadExtent.setText("Завантажити ділянки в межах екрану в тимчасовий шар")
                 self.LoadExtent.setIcon(QIcon(os.path.join(self.plugin_dir,"Icons","Download.png")))
 
         for task in QgsApplication.taskManager().activeTasks():#якщо завантаження вже запущено - перервати старе завантаження
             if task.description()=="Завантаження ділянок":
+                
                 task.cancel()
                 return
         
@@ -232,12 +222,15 @@ class KL_Search_bar:
         
         x1, y1, x2, y2 = geometry.boundingBox().toRectF().getCoords()
         token_url = f"https://kadastr.live/export/{y1}/{x1}/{y2}/{x2}"
+        print(token_url)
         
-        self.task = LoadByExtent("Завантаження ділянок", token_url)        
+        task = LoadByExtent("Завантаження ділянок", token_url)        
         
-        self.task.statusChanged.connect(status_changed)
+        task.statusChanged.connect(status_changed)
         
-        QgsApplication.taskManager().addTask(self.task)
+        QgsApplication.taskManager().addTask(task)
+        
+        print('Завантажую ділянки...')#без цього прінта не запускається
     
     def addLayer(self, action=False):#додає шар на основі параметру action що містить посилання на кнопку яку натиснули
         if not isinstance(action, QAction):#якщо нічого не передано підміняє на натискання кнопки "додати шар ділянок" 
@@ -246,69 +239,38 @@ class KL_Search_bar:
             self.searchParcel.setEnabled(True)
             self.cadNum.returnPressed.connect(self.Search)        
         
-        name = self.layers_list[action.text()]["name"]
-        url = self.layers_list[action.text()]["url"]
-        style = self.layers_list[action.text()].get("style")
-        extent = self.layers_list[action.text()].get("extent")
+        name=self.layers_list[action.text()]["name"]
+        url=self.layers_list[action.text()]["url"]
+        style=self.layers_list[action.text()].get("style")
         
         project = QgsProject.instance()
         for layer in project.mapLayers().values():
-            if type(layer)==QgsVectorTileLayer and layer.sourcePath()==url:                
-                self.iface.messageBar().pushMessage(f"Шар «{name}» вже наявний в проекті!", Qgis.Warning, 5)
-                
-                self.iface.setActiveLayer(layer)
-                project.layerTreeRoot().findLayer(layer.id()).setItemVisibilityChecked(True)
-
-                crsDest = self.iface.mapCanvas().mapSettings().destinationCrs()
-                transform = QgsCoordinateTransform(QgsCoordinateReferenceSystem(3857), crsDest, project)
-                l_extent = layer.extent()
-                l_extent = transform.transformBoundingBox(l_extent)
-                if not l_extent.contains(self.iface.mapCanvas().extent()):
-                    self.iface.mapCanvas().setExtent(l_extent)
-                layer.triggerRepaint()
-                return layer #вихід якшо вже є такий шар
+            if (layer.providerType()=='xyzvectortiles' or layer.providerType()=='vectortile') and layer.sourcePath()==url:                
+                print("Шар вже наявний")
+                self.first_time_flag=False
+                return layer #вихід якшо вже є такий шар                 
         
         layer = QgsVectorTileLayer("type=xyz&url="+url, name)
         if style:
-            
-            if self.QVersion<=3.2810:
-                style27 = style.replace(".qml","_27.qml")
-                style_file = os.path.join(self.plugin_dir,"Styles",style27)
-                if os.path.exists(style_file):
-                    layer.loadNamedStyle(style_file)
-                else:
-                    layer.loadNamedStyle(os.path.join(self.plugin_dir,"Styles",style))
-            else:
-                layer.loadNamedStyle(os.path.join(self.plugin_dir,"Styles",style))
-        if extent:
-            layer.setExtent(QgsRectangle(extent[0],extent[2],extent[1],extent[3]))
-
-            crsDest = self.iface.mapCanvas().mapSettings().destinationCrs()
-            transform = QgsCoordinateTransform(QgsCoordinateReferenceSystem(3857), crsDest, project)
-            
-            l_extent = transform.transformBoundingBox(layer.extent())
-            if not l_extent.contains(self.iface.mapCanvas().extent()):
-                    self.iface.mapCanvas().setExtent(l_extent)
-        
-        QgsProject.instance().addMapLayer(layer)
+            layer.loadNamedStyle(os.path.join(self.plugin_dir,"Styles",style))
         layer.triggerRepaint()        
+        QgsProject.instance().addMapLayer(layer)
+        self.first_time_flag=False
         return layer
         
     def select_parcel_layer(self):   #повертає посилання на шар земельних ділянок, якщо він відсутній додає його
         url=self.layers_list[next(iter(self.layers_list))]["url"]
         layer=self.iface.activeLayer()
-        project = QgsProject.instance()
-
         if layer and (layer.providerType()=='xyzvectortiles' or layer.providerType()=='vectortile') and layer.sourcePath()==url:#для того аби не ганяти всі шари, якшо вибраний правильний берем його
-            project.layerTreeRoot().findLayer(layer.id()).setItemVisibilityChecked(True)
+            self.first_time_flag=False
             return layer
+        project = QgsProject.instance()        
             
         for layer in project.mapLayers().values():
             if (layer.providerType()=='xyzvectortiles' or layer.providerType()=='vectortile') and layer.sourcePath()==url:
                 self.iface.setActiveLayer(layer)
-                project.layerTreeRoot().findLayer(layer.id()).setItemVisibilityChecked(True)
+                self.first_time_flag=False
                 return layer
-        
         #Якщо не знайдено шар, додаєм новий
         return self.addLayer()
     
@@ -339,7 +301,7 @@ class KL_Search_bar:
         if not isinstance(geometry, QgsGeometry):
             return None
         xform = QgsCoordinateTransform(inCRS, outCRS, QgsProject.instance())
-        output_geom = QgsGeometry(geometry)
+        output_geom=QgsGeometry(geometry)
         output_geom.transform(xform)
         return output_geom
     
@@ -363,18 +325,21 @@ class KL_Search_bar:
                 if feature['cadnum']==self.cadNum.text():
                     SFQ=SFQ-1#якшо в нас повторюється пошук, скидаємо вхідну кількість на одну ділянку
         search_geometry = QgsGeometry().fromPointXY(QgsPointXY(longitude, latitude))
-        
+        #print(search_geometry)
+        print(layer.crs())
         xform = QgsCoordinateTransform(QgsCoordinateReferenceSystem(4326), QgsCoordinateReferenceSystem(3857), QgsProject.instance())
         Xsearch_geometry = QgsGeometry().fromRect(search_geometry.buffer(0.000001, 1).boundingBox())#Point (23.07821245859079795 48.18902231638761435)
-        
+        print(Xsearch_geometry)
         Xsearch_geometry.transform(xform)
+        print(Xsearch_geometry)
         context = QgsSelectionContext()
-        context.setScale(5000)
+        context.setScale(10000)
         
         if keep_selection:
             layer.selectByGeometry(Xsearch_geometry,context, behavior=Qgis.SelectBehavior.AddToSelection)
         else:
             layer.selectByGeometry(Xsearch_geometry,context)
+        #print("Виділених об'єктів: "+str(layer.selectedFeatureCount()))
         
         if keep_selection:
             return layer.selectedFeatureCount()>SFQ
@@ -448,8 +413,10 @@ class KL_Search_bar:
                 print("Помилка 500. спроба 2")
                 token_response = token_session.get(token_url, timeout=timeout)
                 if token_response.status_code==500:
-                    self.iface.messageBar().pushMessage("Помилка","Сервер повернув помилку 500. Зачекайте декілька секунд і спробуйте знову.", level=Qgis.Warning, duration=5)
+                    print("No results found for the provided cadnum.")
+                    self.message_show("Сервер повернув помилку 500","Зачекайте декілька секунд і спробуйте знову.",QMessageBox.Warning)
                     return None, None
+            #token_response.raise_for_status()  # Raise an exception if the request was not successful
             
             respond = json.loads(token_response.text)
 
@@ -460,11 +427,12 @@ class KL_Search_bar:
                     self.message_show(f"Площа введеної ділянки {cadnum} - {area} {area_unit}",None,QMessageBox.NoIcon)
                 return area, area_unit
             else:
-                self.iface.messageBar().pushMessage("Помилка", "За даним кадастровим номером ділянок не знайдено!", level=Qgis.Warning, duration=5)
+                print("No results found for the provided cadnum.")
+                self.message_show("Помилка","За даним кадастровим номером ділянок не знайдено!",QMessageBox.Warning)
                 return None, None
         except requests.exceptions.RequestException as e:
-            self.iface.messageBar().pushMessage("Kadastr.Live: HTTP Error", str(e), level=Qgis.Critical, duration=10)
-            return None, None
+            print(f"HTTP request error: {e}")
+            raise  # Re-raise the exception for handling at a higher level
     
     def validate_input(self, element):
         validator = element.validator()
@@ -499,13 +467,15 @@ class KL_Search_bar:
             return False
     
     def LandGo(self):
+        #print('LandGo')
         if self.validate_input(self.cadNum) and not self.isControlOrShift():
             cadnum=self.cadNum.text()
             QDesktopServices.openUrl(QUrl(f"https://e.land.gov.ua/back/cadaster/?cad_num={cadnum}"))
             return
         else:   
-            if not self.QVersion>3.27:      
-                self.iface.messageBar().pushMessage("Відсутня ділянка для перевірки","Введіть правильний кадастровий номер!", level=Qgis.Warning, duration=5)
+            if not float(Qgis.QGIS_VERSION[:4])>3.27:
+                print("Весія не пройшла")                
+                self.message_show("Відсутня ділянка для перевірки","Введіть правильний кадастровий номер!",QMessageBox.Warning)
                 return
             layer=self.iface.activeLayer()
             
@@ -530,7 +500,7 @@ class KL_Search_bar:
                         QDesktopServices.openUrl(QUrl(f"https://e.land.gov.ua/back/cadaster/?cad_num={cadnum}"))
                     return
             
-            self.iface.messageBar().pushMessage("Помилка", "Введіть правильний кадастровий номер, або виберіть ділянки на карті!", level=Qgis.Warning)
+            self.message_show("Помилка","Введіть правильний кадастровий номер, або виберіть ділянки на карті!",QMessageBox.Warning)
             return
     
     def KLgo(self):
@@ -540,9 +510,9 @@ class KL_Search_bar:
             QDesktopServices.openUrl(QUrl(f"https://kadastr.live/parcel/{cadnum}"))
             return
         else:   
-            if not self.QVersion>3.27:
+            if not float(Qgis.QGIS_VERSION[:4])>3.27:
                 print("Весія не пройшла")                
-                self.iface.messageBar().pushMessage("Відсутня ділянка для перевірки","Введіть правильний кадастровий номер!", level=Qgis.Warning, duration=5)
+                self.message_show("Відсутня ділянка для перевірки","Введіть правильний кадастровий номер!",QMessageBox.Warning)
                 return
             layer=self.iface.activeLayer()
             if layer.providerType()=='xyzvectortiles' or layer.providerType()=='vectortile':
@@ -552,7 +522,7 @@ class KL_Search_bar:
                             cadnum=feature.attribute('cadnum')
                             QDesktopServices.openUrl(QUrl(f"https://kadastr.live/parcel/{cadnum}"))
                         return
-            self.iface.messageBar().pushMessage("Помилка","Введіть правильний кадастровий номер, або виберіть ділянки на карті!", level=Qgis.Warning, duration=5)
+            self.message_show("Помилка","Введіть правильний кадастровий номер, або виберіть ділянки на карті!",QMessageBox.Warning)
             return
     
     def Search(self):
@@ -573,12 +543,15 @@ class KL_Search_bar:
                 token_session = requests.session()
                 
                 token_response = token_session.get(token_url, timeout=timeout)
-                
+
+                #token_response.raise_for_status()  # Raise an exception if the request was not successful
+                print(token_response.status_code)
                 if token_response.status_code==500:
                     print("Помилка 500. спроба 2")
                     token_response = token_session.get(token_url, timeout=timeout)
                     if token_response.status_code==500:
-                        self.iface.messageBar().pushMessage("Помилка 500","Зачекайте декілька секунд і спробуйте знову.", Qgis.Warning, 5)
+                        print("No results found for the provided cadnum.")
+                        self.message_show("Сервер повернув помилку 500","Зачекайте декілька секунд і спробуйте знову.",QMessageBox.Warning)
                         return None, None, None
                 
                 respond = json.loads(token_response.text)
@@ -590,51 +563,62 @@ class KL_Search_bar:
                     area=float(respond['results'][0]['area'])
                     return latitude, longitude, area
                 else:
-                    
+                    print("No results found for the provided cadnum.")
+                    #self.message_show("Помилка","За даним кадастровим номером ділянок не знайдено!",QMessageBox.Warning)
                     return None, None, None
             except requests.exceptions.RequestException as e:
-                self.iface.messageBar().pushMessage("Kadastr.Live: HTTP Error", str(e), level=Qgis.Critical, duration=10)
-                return None, None, None
+                print(f"HTTP request error: {e}")
+                raise  # Re-raise the exception for handling at a higher level
         
-        def go_to_coordinates(latitude, longitude, area = 0.25):#Для версії з хрестиками
-            
+        def go_to_coordinates(latitude, longitude, area=0.25):#Для версії з хрестиками
+            # Get latitude and longitude from the provided cadnum
+            area_value=0.25
             latitude, longitude, area_value = get_coordinates_from_cadnum(cadnum)
             
-            if latitude is  None or longitude is  None:
-                return False
-            
-            source_crs = QgsCoordinateReferenceSystem(4326)
-            
-            canvas = self.iface.mapCanvas()
-            canvas.refresh()
-            target_crs = canvas.mapSettings().destinationCrs()
-            
-            transform = QgsCoordinateTransform(source_crs, target_crs, QgsProject.instance())
-            point = QgsPointXY(longitude, latitude)
-            transformed_point = transform.transform(point)
-            extent = QgsRectangle(transformed_point, transformed_point)
-            
-            self.mark_point(transformed_point)
-            
-            if area==0:
-                return True
-                
-            canvas.setExtent(extent)
-            if area_value < 0.25:
-                canvas.zoomScale(500)
-            elif 0.25 <= area_value < 1:
-                canvas.zoomScale(2000)
-            else:
-                canvas.zoomScale(10000)
-                
-            return True
-        
-        def go_to_selection(layer, latitude, longitude, area = 0.25):
-            go_to_coordinates(latitude, longitude, 0)#чисто щоб хрестик поставило
-            canvas = self.iface.mapCanvas()
-            canvas.zoomToSelected(layer)
-            canvas.zoomScale(canvas.scale()*3)
+            if latitude is not None and longitude is not None:
+                # Define the source CRS (WGS 84)
+                source_crs = QgsCoordinateReferenceSystem(4326)
 
+                # Get the target CRS from the map canvas
+                canvas = self.iface.mapCanvas()
+                target_crs = canvas.mapSettings().destinationCrs()
+
+                # Create a coordinate transform
+                transform = QgsCoordinateTransform(source_crs, target_crs, QgsProject.instance())
+
+                # Transform the point to the target CRS
+                point = QgsPointXY(longitude, latitude)
+                #print(point)
+                transformed_point = transform.transform(point)
+
+                # Create an extent around the transformed point
+                extent = QgsRectangle(transformed_point, transformed_point)
+                #print(extent)
+
+                # Set the extent and zoom scale on the map canvas
+                
+                
+                #canvas.zoomScale(4000)
+
+                # Refresh the map canvas
+                self.mark_point(transformed_point)
+                #self.select_parcel(QgsGeometry().fromPointXY(QgsPointXY(longitude,latitude)),False)
+                canvas.refresh()
+                if area==0:
+                    return True
+                    
+                canvas.setExtent(extent)
+                if area_value < 0.25:
+                    canvas.zoomScale(500)
+                elif 0.25 <= area_value < 1:
+                    canvas.zoomScale(2000)
+                else:
+                    canvas.zoomScale(10000)
+                    
+                return True
+            else:
+                return False
+        
         if self.validate_input(self.cadNum):
             cadnum=self.cadNum.text()
             
@@ -642,26 +626,44 @@ class KL_Search_bar:
             
             layer = self.select_parcel_layer()
             
-            if not latitude or not longitude:
-                self.iface.messageBar().pushMessage("Помилка", "Не вдалося знайти ділянку з даним кадастровим номером. Можливо кадастровий номер відсутній, або наявні проблеми з доступом до сервісу Kadastr.live. Перевірте кадастровий номер, і спробуйте ще раз.", Qgis.Warning, 10)
+            canvas = self.iface.mapCanvas()
+            #canvas.zoomToSelected(layer)
+            
+            canvas.zoomScale(10000)
+            
+            if not latitude:
+                self.message_show("Не вдалося знайти ділянку з даним кадастровим номером.","Можливо кадастровий номер відсутній, або наявні проблеми з доступом до сервісу Kadastr.live. Перевірте кадастровий номер, і спробуйте ще раз.",QMessageBox.Warning)
                 return None
             
-            if not self.QVersion>3.27:
+            if not float(Qgis.QGIS_VERSION[:4])>3.27:
                 print("Весія не пройшла")                
                 go_to_coordinates(latitude, longitude, area)
                 return
-
+            else:
+                go_to_coordinates(latitude, longitude, 0)
+            
             if self.isControlOrShift():
                 result=self.select_parcel(latitude, longitude, keep_selection=True)
             else:
                 result=self.select_parcel(latitude, longitude, keep_selection=False)
             
             if result:
-                QTimer.singleShot(100, lambda: go_to_selection(layer, latitude, longitude, area))
+                selected_features = layer.selectedFeatures()
+                print(selected_features[0]['cadnum'])                 
+                canvas.zoomToSelected(layer)
+                if self.first_time_flag:
+                    message_bar = self.iface.messageBar()
+                    message_item = message_bar.pushMessage("Натисніть пошук ще раз!", Qgis.MessageLevel.Info, 5)
+                    self.first_time_flag=False
+                
+                canvas.zoomScale(canvas.scale()*3)
+                print(canvas.scale())
             else:
-                self.iface.messageBar().pushMessage("Не вдалося перейти до ділянки!", "Спробуйте натиснути пошук ще раз, або наблизитися до зони пошуку.", level=Qgis.Warning, duration=5)
+                self.message_show("Не вдалося перейти до ділянки!","Спробуйте натиснути пошук ще раз, або наблизитися до зони пошуку.",QMessageBox.Warning)
+            # if not zoom_to_coordinates(cadnum):
+                # return
         else:
-            self.iface.messageBar().pushMessage("Неправильний кадастровий номер!", "Введіть правильний кадастровий номер! Можливо поле вводу пусте або не заповнене до кінця", level=Qgis.Warning, duration=5)
+            self.message_show("Введіть правильний кадастровий номер!", "Можливо поле вводу пусте або не заповнене до кінця", QMessageBox.Warning)
             return
         
     def GetArea(self):
@@ -671,8 +673,9 @@ class KL_Search_bar:
             self.get_area(cadnum,10,True)
             return
         else:
-            if not self.QVersion>3.27:             
-                self.iface.messageBar().pushMessage("Відсутня ділянка для перевірки", "Введіть правильний кадастровий номер!", Qgis.Warning, 5)
+            if not float(Qgis.QGIS_VERSION[:4])>3.27:
+                print("Весія не пройшла")                
+                self.message_show("Відсутня ділянка для перевірки","Введіть правильний кадастровий номер!",QMessageBox.Warning)
                 return
             
             layer = self.select_parcel_layer()
@@ -689,6 +692,6 @@ class KL_Search_bar:
                     msg=msg+cadNum+" - "+str(area[cadNum][0])+" "+area[cadNum][1]+"\r\n"                       
                 self.message_show(msg+"\r\nЗагальна площа вибраних ділянок - "+str(round(total_area,4))+" га",None,QMessageBox.NoIcon)
                 return
-            self.iface.messageBar().pushMessage("Відсутні ділянки для перевірки", "Введіть правильний кадастровий номер, або виберіть ділянки на карті!", level=Qgis.Warning, duration=5)
+            self.message_show("Відсутні ділянки для перевірки","Введіть правильний кадастровий номер, або виберіть ділянки на карті!",QMessageBox.Warning)
             return
     
