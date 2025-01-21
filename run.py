@@ -37,10 +37,20 @@ class KL_Search_bar:
         
         return toolbar
     
+    def get_QGIS_ver(self):
+        ver1, ver2, ver3 = Qgis.QGIS_VERSION.split('-')[0].split('.')
+        if len(ver2)==1:
+            ver2=f'0{ver2}'
+        if len(ver3)==1:
+            ver3=f'0{ver3}'
+        return float(f'{ver1}.{ver2}{ver3}')
+
     def __init__(self, iface):
         self.marker_remove_timer=QTimer()
         self.iface = iface
-        
+
+        self.QVersion = self.get_QGIS_ver()
+
         self.prevInput='' 
         self.markers=[]
         self.plugin_dir = os.path.dirname(__file__)
@@ -260,7 +270,8 @@ class KL_Search_bar:
         
         layer = QgsVectorTileLayer("type=xyz&url="+url, name)
         if style:
-            if float(Qgis.QGIS_VERSION[:4])<=3.27:
+            
+            if self.QVersion<=3.2810:
                 style27 = style.replace(".qml","_27.qml")
                 style_file = os.path.join(self.plugin_dir,"Styles",style27)
                 if os.path.exists(style_file):
@@ -493,7 +504,7 @@ class KL_Search_bar:
             QDesktopServices.openUrl(QUrl(f"https://e.land.gov.ua/back/cadaster/?cad_num={cadnum}"))
             return
         else:   
-            if not float(Qgis.QGIS_VERSION[:4])>3.27:      
+            if not self.QVersion>3.27:      
                 self.iface.messageBar().pushMessage("Відсутня ділянка для перевірки","Введіть правильний кадастровий номер!", level=Qgis.Warning, duration=5)
                 return
             layer=self.iface.activeLayer()
@@ -529,7 +540,7 @@ class KL_Search_bar:
             QDesktopServices.openUrl(QUrl(f"https://kadastr.live/parcel/{cadnum}"))
             return
         else:   
-            if not float(Qgis.QGIS_VERSION[:4])>3.27:
+            if not self.QVersion>3.27:
                 print("Весія не пройшла")                
                 self.iface.messageBar().pushMessage("Відсутня ділянка для перевірки","Введіть правильний кадастровий номер!", level=Qgis.Warning, duration=5)
                 return
@@ -635,7 +646,7 @@ class KL_Search_bar:
                 self.iface.messageBar().pushMessage("Помилка", "Не вдалося знайти ділянку з даним кадастровим номером. Можливо кадастровий номер відсутній, або наявні проблеми з доступом до сервісу Kadastr.live. Перевірте кадастровий номер, і спробуйте ще раз.", Qgis.Warning, 10)
                 return None
             
-            if not float(Qgis.QGIS_VERSION[:4])>3.27:
+            if not self.QVersion>3.27:
                 print("Весія не пройшла")                
                 go_to_coordinates(latitude, longitude, area)
                 return
@@ -660,7 +671,7 @@ class KL_Search_bar:
             self.get_area(cadnum,10,True)
             return
         else:
-            if not float(Qgis.QGIS_VERSION[:4])>3.27:             
+            if not self.QVersion>3.27:             
                 self.iface.messageBar().pushMessage("Відсутня ділянка для перевірки", "Введіть правильний кадастровий номер!", Qgis.Warning, 5)
                 return
             
