@@ -7,14 +7,17 @@ import json
 import os
 
 class MultiLineInputDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, icon=None):
         super().__init__(parent)
 
         self.setWindowTitle("Введіть список кадастрових номерів")
+        if icon: 
+            self.setWindowIcon(icon)
 
         self.layout = QVBoxLayout(self)
 
         self.text_edit = QTextEdit(self)
+        self.text_edit.setAcceptRichText(False)
         self.layout.addWidget(self.text_edit)
 
         self.button_box = QVBoxLayout()
