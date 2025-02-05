@@ -98,6 +98,7 @@ class KL_Search_bar:
 
         #Кнопка пошуку
         icon = QIcon(os.path.join(self.plugin_dir,"Icons","Search.png"))
+        self.SearchWindows_icon = icon
         self.searchParcel = QAction(icon, "Пошук по кадастровому номеру", self.iface.mainWindow())        
         self.searchParcel.triggered.connect(self.Search)
         self.searchParcel.setEnabled(True)
@@ -557,23 +558,38 @@ class KL_Search_bar:
             return
     
     def batch_search(self):
-        dialog = MultiLineInputDialog()
+        dialog = MultiLineInputDialog(self.iface.mainWindow(), self.SearchWindows_icon)
         if dialog.exec_() == QDialog.Accepted:
             text = dialog.get_text()
             #print(f"Input text:\n{text}")
             lines = text.split('\n')
             # Define regex pattern to match cadastral numbers
             cadnum_pattern = re.compile(r'\b\d{10}:\d{2}:\d{3}:\d{4}\b')            
+            total_qty = 0
+            not_found_cadnums = []
             for line in lines:
                 matches = re.findall(cadnum_pattern, line)
                 if matches:
                     for cadnum in matches:
-                        print(f"Found cadastral number: {cadnum}")
-                        self.Search(cadnum, True)
+                        total_qty += 1
+                        
+                        if not self.Search(cadnum, True):
+                            not_found_cadnums.append(cadnum)
+            
+            if total_qty == 0:
+                self.iface.messageBar().pushMessage("Помилка!", "В тексті немає кадастрових номерів!", level=Qgis.Warning, duration=5)
+            else:
+                if len(not_found_cadnums) > 0:
+                    message = f"Пошук завершено. Знайдено {total_qty-len(not_found_cadnums)} з {total_qty} кадастрових номерів. Відсутні кадастрові номери: {', '.join(not_found_cadnums)}"
+                    self.iface.messageBar().pushMessage("Увага!", message, level=Qgis.Warning)
+                else:
+                    self.iface.messageBar().pushMessage("Успіх!", f"Всі {total_qty} кадастрових номерів знайдені!", level=Qgis.Success, duration=5)
+
         else:
             pass
             #print("Dialog canceled")
-
+        
+        
     def Search(self, cadnum = None, batch_search = False):
         def get_coordinates_from_cadnum(cadnum, timeout=10):
             """
@@ -597,7 +613,8 @@ class KL_Search_bar:
                     print("Помилка 500. спроба 2")
                     token_response = token_session.get(token_url, timeout=timeout)
                     if token_response.status_code==500:
-                        self.iface.messageBar().pushMessage("Помилка 500","Зачекайте декілька секунд і спробуйте знову.", Qgis.Warning, 5)
+                        if not batch_search:
+                            self.iface.messageBar().pushMessage("Помилка 500","Зачекайте декілька секунд і спробуйте знову.", Qgis.Warning, 5)
                         return None, None, None
                 
                 respond = json.loads(token_response.text)
@@ -609,7 +626,8 @@ class KL_Search_bar:
                     area=float(respond['results'][0]['area'])
                     return latitude, longitude, area
                 else:
-                    self.iface.messageBar().pushMessage("Помилка",f"Кадастровий номер {cadnum} не знайдено", level=Qgis.Warning, duration=5)
+                    if not batch_search:
+                        self.iface.messageBar().pushMessage("Помилка",f"Кадастровий номер {cadnum} не знайдено", level=Qgis.Warning, duration=5)
                     return None, None, None
             except requests.exceptions.RequestException as e:
                 self.iface.messageBar().pushMessage("Kadastr.Live: HTTP Error", str(e), level=Qgis.Critical, duration=10)
@@ -657,20 +675,21 @@ class KL_Search_bar:
         if not cadnum:
             cadnum = self.cadNum.text()
 
-        if not cadnum and self.validate_input(cadnum) or cadnum:
+        if not cadnum and self.validate_input(self.cadNum) or cadnum:
             
             latitude, longitude, area = get_coordinates_from_cadnum(cadnum)
             
             layer = self.select_parcel_layer()
             
             if not latitude or not longitude:
-                self.iface.messageBar().pushMessage("Помилка", f"Не вдалося знайти ділянку з даним кадастровим номером {cadnum}. Можливо ділянка відсутня, або наявні проблеми з доступом до сервісу Kadastr.live. Перевірте кадастровий номер, і спробуйте ще раз.", Qgis.Warning, 10)
-                return None
+                if not batch_search:
+                    self.iface.messageBar().pushMessage("Помилка", f"Не вдалося знайти ділянку з даним кадастровим номером {cadnum}. Можливо ділянка відсутня, або наявні проблеми з доступом до сервісу Kadastr.live. Перевірте кадастровий номер, і спробуйте ще раз.", Qgis.Warning, 10)
+                return False
             
             if not self.QVersion>3.27:
-                print("Весія не пройшла")                
+                #print("Весія не пройшла")                
                 go_to_coordinates(latitude, longitude, area)
-                return
+                return True
 
             if self.isControlOrShift() or batch_search:
                 result=self.select_parcel(latitude, longitude, keep_selection=True)
@@ -679,11 +698,14 @@ class KL_Search_bar:
             
             if result:
                 QTimer.singleShot(100, lambda: go_to_selection(layer, latitude, longitude, area))
+                return True
             else:
-                self.iface.messageBar().pushMessage("Не вдалося перейти до ділянки!", "Спробуйте натиснути пошук ще раз, або наблизитися до зони пошуку.", level=Qgis.Warning, duration=5)
+                if not batch_search:
+                    self.iface.messageBar().pushMessage("Не вдалося перейти до ділянки!", "Спробуйте натиснути пошук ще раз, або наблизитися до зони пошуку.", level=Qgis.Warning, duration=5)
+                    return False
         else:
             self.iface.messageBar().pushMessage("Неправильний кадастровий номер!", "Введіть правильний кадастровий номер! Можливо поле вводу пусте або не заповнене до кінця", level=Qgis.Warning, duration=5)
-            return
+            return False
         
     def GetArea(self):
         #print('GetArea')
