@@ -1,8 +1,34 @@
 from qgis.core import QgsTask, QgsApplication, QgsTaskManager, QgsFields, QgsField, QgsJsonUtils, QgsVectorLayer, QgsProject, QgsProject
 from qgis.PyQt.QtCore import QVariant
+
+from qgis.PyQt.QtWidgets import QDialog, QPushButton, QVBoxLayout, QTextEdit
 import requests
 import json
 import os
+
+class MultiLineInputDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setWindowTitle("Введіть список кадастрових номерів")
+
+        self.layout = QVBoxLayout(self)
+
+        self.text_edit = QTextEdit(self)
+        self.layout.addWidget(self.text_edit)
+
+        self.button_box = QVBoxLayout()
+        self.ok_button = QPushButton("OK", self)
+        self.cancel_button = QPushButton("Відміна", self)
+        self.button_box.addWidget(self.ok_button)
+        self.button_box.addWidget(self.cancel_button)
+        self.layout.addLayout(self.button_box)
+
+        self.ok_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+
+    def get_text(self):
+        return self.text_edit.toPlainText()
 
 class LoadByExtent(QgsTask):
     def __init__(self, description, token_url):
