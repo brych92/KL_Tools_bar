@@ -2,7 +2,7 @@
 name=Kadastr.Live Toolbar
 qgisMinimumVersion=3.16
 description=Пошук ділянки на карті Kadastr.Live за кадастровим номером.
-version=0.8.1.1
+version=0.8.2.0
 author=Стьопа
 email=brych92@gmail.com
 about=	Шукає місцезнаходження ділянки за кадастровим номером використовуючи API ресурсу Kadastr.Live.
@@ -14,7 +14,7 @@ about=	Шукає місцезнаходження ділянки за када�
 tracker=https://github.com/brych92/KL_Tools_bar/issues
 repository=https://github.com/brych92/KL_Tools_bar
 icon=icon.png
-experimental=true
+experimental=false
 homepage=https://github.com/brych92/KL_Tools_bar
 changelog=
  Version 0.1:
@@ -82,3 +82,6 @@ changelog=
  * Допрацьована перевірка версії qgis для символіки
       Version 0.8.1.1:
  * Доданий пакетний пошук ділянок(подвійний клік на полі вводу)
+      Version 0.8.2.0:
+ * Оновлені посилання на векторні шари сервісу kadastr.live
+ * Додано растровий шар грунтів
