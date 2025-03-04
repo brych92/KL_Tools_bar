@@ -1,6 +1,6 @@
 
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QProcess, QProcessEnvironment, QUrl, QTimer, Qt, QVariant
-from qgis.core import QgsCoordinateReferenceSystem, QgsApplication, QgsVectorTileLayer, Qgis, QgsFields, QgsField, QgsJsonUtils, QgsTaskManager
+from qgis.core import QgsCoordinateReferenceSystem, QgsApplication, QgsVectorTileLayer, QgsRasterLayer, Qgis, QgsFields, QgsField, QgsJsonUtils, QgsTaskManager
 from qgis.PyQt.QtGui import QIcon, QRegularExpressionValidator, QFontMetrics, QValidator, QDesktopServices, QColor
 from qgis.PyQt.QtWidgets import *
 from qgis.PyQt.QtCore import QRegularExpression as QRegExp
@@ -63,17 +63,22 @@ class KL_Search_bar:
         
         self.layers_list={#звідси буде братися меню та посилання на шари
             "Карта земельних ділянок":{"name":"Kadastr.Live-Parcels","url":"https://cdn.kadastr.live/tiles/maps/kadastr/land_polygons/{z}/{x}/{y}.pbf","style":"Parcels.qml","extent":(2419945,4501250,5484118,6867501)},#цей запис йде на кнопку
-            "АТУ":{"name":"Kadastr.Live-ATU","url":"https://cdn.kadastr.live/tiles/maps/dzk_atu/{z}/{x}/{y}.pbf","style":"ATU.qml","extent":(2419945,4501250,5484118,6867501)},
-            "Індексна карта":{"name":"Kadastr.Live-IndexMap","url":"https://cdn.kadastr.live/tiles/maps/dzk_index_map/{z}/{x}/{y}.pbf","style":"Index.qml","extent":(2419945,4501250,5484118,6867501)},
-            "Кадастрова карта":{"name":"Kadastr.Live-DZK","url":"https://cdn.kadastr.live/tiles/maps/kadastr/{z}/{x}/{y}.pbf","style":"Parcels.qml","extent":(2419945,4501250,5484118,6867501)},
+            "АТУ":{"name":"Kadastr.Live-ATU","url":"https://vector.kadastr.live/maps/dani-administrativno-teritorialnogo-ustroiu/{z}/{x}/{y}.pbf","style":"ATU.qml","extent":(2419945,4501250,5484118,6867501)},
+            "Індексна карта":{"name":"Kadastr.Live-IndexMap","url":"https://vector.kadastr.live/maps/indeksna-kadastrova-karta/{z}/{x}/{y}.pbf","style":"Index.qml","extent":(2419945,4501250,5484118,6867501)},
+            "Кадастрова карта":{"name":"Kadastr.Live-DZK","url":"https://cdn.kadastr.live/tiles/maps/kadastr/{z}/{x}/{y}.pbf","style":"Parcels.qml","extent":(2419945,4501250,5484118,6867501)},            
             "sep0":{"name":"*"},
-            "Природньо-заповідний фонд":{"name":"Kadastr.Live-PZF","url":"https://cdn.kadastr.live/tiles/maps/dzk_pzf/{z}/{x}/{y}.pbf","style":"PZF.qml","extent":(2419945,4501250,5484118,6867501)},
-            "Карта водних ресурсів":{"name":"Kadastr.Live-WaterMap","url":"https://cdn.kadastr.live/tiles/maps/dzk_water_map/{z}/{x}/{y}.pbf","style":"Water.qml","extent":(2419945,4501250,5484118,6867501)},
-            "Sep1":{"name":"*"},
+            "Природньо-заповідний фонд":{"name":"Kadastr.Live-PZF","url":"https://vector.kadastr.live/maps/mezhi-prirodo-zapovidnogo-fondu/{z}/{x}/{y}.pbf","style":"PZF.qml","extent":(2419945,4501250,5484118,6867501)},
+            "sep1":{"name":"*"},
+            "Карта водних ресурсів Загальна":{"name":"Kadastr.Live-WaterMap","url":"https://cdn.kadastr.live/tiles/maps/dzk_water_map/{z}/{x}/{y}.pbf","style":"Water.qml","extent":(2419945,4501250,5484118,6867501)},
+            "Карта річок":{"name":"Kadastr.Live-RiverLine","url":"https://vector.kadastr.live/maps/richki/{z}/{x}/{y}.pbf","style":"RiverLine.qml","extent":(2419945,4501250,5484118,6867501)},
+            "Басейни та водокористування":{"name":"Kadastr.Live-WaterMap","url":"https://vector.kadastr.live/maps/vodogospodarstva/{z}/{x}/{y}.pbf","style":"vodogospodarstva.qml","extent":(2419945,4501250,5484118,6867501)},
+            "Sep2":{"name":"*"},
             "Функц. призначення м.Київ":{"name":"Kadastr.Live-Kyiv_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-kiiv/{z}/{x}/{y}.pbf","style":"Kyiv_Func.qml", "extent":(3370113,3422430,6490174,6540480)},
             "Функц. призначення м.Житомир":{"name":"Kadastr.Live-Zhutomir_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-zhitomir/{z}/{x}/{y}.pbf","style":"Zhutomir_Func.qml","extent":(3178527,3204686,6477354,6502507)},
             "Функц. призначення м.Хмельницький":{"name":"Kadastr.Live-Khmelnitskii_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-khmelnitskii/{z}/{x}/{y}.pbf","style":"Khmelnitskii_Func.qml","extent":(2992135,3018294,6332537,6357690)},
             "Функц. призначення м.Рівне":{"name":"Kadastr.Live-Rivne_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-rivne/{z}/{x}/{y}.pbf","style":"Rivne_Func.qml","extent":(2909552,2933279,6541101,6563916)},
+            "Sep3":{"name":"*"},
+            "Грунти(растр)":{"name":"Kadastr.Live-Grunt","url":"https://cdn.kadastr.live/proxy/grunt/{z}/{x}/{y}.png","extent":(2419945,4501250,5484118,6867501)}
             }
         
     def initGui(self):
@@ -270,18 +275,21 @@ class KL_Search_bar:
                 layer.triggerRepaint()
                 return layer #вихід якшо вже є такий шар
         
-        layer = QgsVectorTileLayer("type=xyz&url="+url, name)
-        if style:
-            
-            if self.QVersion<=3.2814:
-                style27 = style.replace(".qml","_27.qml")
-                style_file = os.path.join(self.plugin_dir,"Styles",style27)
-                if os.path.exists(style_file):
-                    layer.loadNamedStyle(style_file)
+        if url.endswith(".pbf"):
+            layer = QgsVectorTileLayer("type=xyz&url="+url, name)
+            if style:
+                
+                if self.QVersion<=3.2814:
+                    style27 = style.replace(".qml","_27.qml")
+                    style_file = os.path.join(self.plugin_dir,"Styles",style27)
+                    if os.path.exists(style_file):
+                        layer.loadNamedStyle(style_file)
+                    else:
+                        layer.loadNamedStyle(os.path.join(self.plugin_dir,"Styles",style))
                 else:
                     layer.loadNamedStyle(os.path.join(self.plugin_dir,"Styles",style))
-            else:
-                layer.loadNamedStyle(os.path.join(self.plugin_dir,"Styles",style))
+        else:
+            layer = QgsRasterLayer(f"type=xyz&url={url}&zmin=7&zmax=15", name, "wms")
         if extent:
             layer.setExtent(QgsRectangle(extent[0],extent[2],extent[1],extent[3]))
 
