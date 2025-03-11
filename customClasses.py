@@ -1,19 +1,22 @@
-from qgis.core import QgsTask, QgsApplication, QgsTaskManager, QgsFields, QgsField, QgsJsonUtils, QgsVectorLayer, QgsProject, QgsProject
-from qgis.PyQt.QtCore import QVariant
+from qgis.core import QgsTask, QgsApplication, QgsTaskManager, QgsFields, QgsField, QgsJsonUtils, QgsVectorLayer, QgsProject, QgsProject, Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsPointXY, QgsRectangle, QgsFeature
+from qgis.gui import QgisInterface
+from qgis.PyQt.QtCore import QVariant, QTimer
 
-from qgis.PyQt.QtWidgets import QDialog, QPushButton, QVBoxLayout, QTextEdit
+from qgis.PyQt.QtWidgets import QDialog, QPushButton, QVBoxLayout, QTextEdit, QMessageBox
 import requests
+from requests.structures import CaseInsensitiveDict
 import json
-import os
+import re
 
 class MultiLineInputDialog(QDialog):
-    def __init__(self, parent=None, icon=None):
+    def __init__(self, parent = None, icon = None, plugin = None):
         super().__init__(parent)
-
-        self.setWindowTitle("Введіть список кадастрових номерів")
+        
+        self.setWindowTitle("Введіть список кадастрових номерів(експериментальна функція)")
         if icon: 
             self.setWindowIcon(icon)
-
+        
+        self.plugin = plugin    
         self.layout = QVBoxLayout(self)
 
         self.text_edit = QTextEdit(self)
@@ -27,11 +30,187 @@ class MultiLineInputDialog(QDialog):
         self.button_box.addWidget(self.cancel_button)
         self.layout.addLayout(self.button_box)
 
-        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.clicked.connect(self.ok)
         self.cancel_button.clicked.connect(self.reject)
 
     def get_text(self):
         return self.text_edit.toPlainText()
+
+    def ok(self):
+        if not self.plugin.warned:
+            msgBox = QMessageBox()
+            msgBox.setText("Ви хочете використати експериментальну функцію?\n"
+                           "Функція може призвести до зависання QGIS, особливо якщо список дуже великий, або кадастровий номер відсутній в базі KL.")
+            msgBox.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+            msgBox.setDefaultButton(QMessageBox.Ok)
+            ret = msgBox.exec_()
+            if ret == QMessageBox.Ok:
+                self.plugin.warned = True
+                self.accept()
+            else:
+                self.reject()
+        else:
+            self.accept()
+
+class BatchSearchTask(QgsTask):
+    def __init__(self, dialog_text:str, iface:QgisInterface, plugin = None):
+        super().__init__("Пакетний пошук", QgsTask.CanCancel)
+        self.dialog_text = dialog_text
+        self.results = None
+        self.iface = iface
+        self.plugin = plugin
+
+    def run(self):
+        self.setProgress(1)
+        cadnums_list = self.parse_text(self.dialog_text)
+        if self.isCanceled():
+            return False
+        if len(cadnums_list) == 0:
+            self.setProgress(100)
+            return False
+        self.setProgress(5)
+        result = {'success': {}, 'error': {}}
+        step = 90/len(cadnums_list)
+        for cadnum in cadnums_list:
+            output = self.get_coordinates_from_cadnum(cadnum)
+            if 'error' not in output:
+                result['success'][cadnum] = output['coords']
+            else:
+                result['error'][cadnum] = output['error']
+            self.setProgress(self.progress() + step)
+            if self.isCanceled():
+                return False
+        self.results = result
+        self.setProgress(100)
+        return True   
+        
+
+    def parse_text(self, text:str) -> list:
+        """
+        Parse text and return a list of cadastral numbers found in it
+
+        :param text: input text
+        :return: list of cadastral numbers
+        """
+        
+        cadnum_pattern = re.compile(r'\b\d{10}:\d{2}:\d{3}:\d{4}\b')
+        cadnums = []
+        matches = re.findall(cadnum_pattern, text)        
+        return list(set(matches))
+
+    def finished(self, result):
+        if self.results is None:
+            print('here')
+            self.iface.messageBar().pushMessage("Помилка!", "В тексті не знайдено кадастрових номерів!", level=Qgis.Warning, duration=5)
+            return
+        
+        if result:
+            total_qty = len(self.results['success']) + len(self.results['error'])
+            if total_qty == 0:
+                self.iface.messageBar().pushMessage("Помилка!", "В тексті не знайдено кадастрових номерів!", level=Qgis.Warning, duration=5)
+                return
+            
+            not_found_cadnums = self.results['error'].keys()
+            if len(not_found_cadnums) > 0:
+                message = f"Пошук завершено. Знайдено {total_qty-len(not_found_cadnums)} з {total_qty} кадастрових номерів. Відсутні кадастрові номери: {', '.join(not_found_cadnums)}"
+                self.iface.messageBar().pushMessage("Увага!", message, level=Qgis.Warning)
+            else:
+                self.iface.messageBar().pushMessage("Успіх!", f"Всі {total_qty} кадастрові номери знайдені!", level=Qgis.Success, duration=5)
+            
+            layer = self.plugin.select_parcel_layer()
+            layer.removeSelection()
+            for cadnum, coords in self.results['success'].items():
+                self.Search(coords)
+
+    def Search(self, coords):
+        def go_to_coordinates(latitude, longitude, area = 0.25):#Для версії з хрестиками
+            if latitude is  None or longitude is  None:
+                raise ValueError("Coordinates are None")
+            
+            source_crs = QgsCoordinateReferenceSystem(4326)
+            
+            canvas = self.iface.mapCanvas()
+            canvas.refresh()
+            target_crs = canvas.mapSettings().destinationCrs()
+            
+            transform = QgsCoordinateTransform(source_crs, target_crs, QgsProject.instance())
+            point = QgsPointXY(longitude, latitude)
+            transformed_point = transform.transform(point)
+            extent = QgsRectangle(transformed_point, transformed_point)
+            
+            self.plugin.mark_point(transformed_point)
+            
+            if area==0:
+                return True
+                
+            canvas.setExtent(extent)
+            if area < 0.25:
+                canvas.zoomScale(500)
+            elif 0.25 <= area < 1:
+                canvas.zoomScale(2000)
+            else:
+                canvas.zoomScale(10000)
+                
+            return True
+        
+        def go_to_selection(layer, latitude, longitude, area = 0.25):
+            go_to_coordinates(latitude, longitude, 0)#чисто щоб хрестик поставило
+            canvas = self.iface.mapCanvas()
+            canvas.zoomToSelected(layer)
+            canvas.zoomScale(canvas.scale()*3)
+
+        latitude, longitude = coords
+            
+        layer = self.plugin.select_parcel_layer()
+        if not self.plugin.QVersion>3.27:
+            #print("Весія не пройшла")                
+            go_to_coordinates(latitude, longitude)
+            return True
+        
+        result=self.plugin.select_parcel(latitude, longitude, keep_selection=True)
+        
+        if result:
+            QTimer.singleShot(100, lambda: go_to_selection(layer, latitude, longitude))
+            return True
+        
+        
+    def get_coordinates_from_cadnum(self, cadnum, timeout=10):
+        """
+        Get latitude and longitude coordinates based on a cadnum.
+
+        :param cadnum: The cadnum to search for.
+        :param timeout: Timeout for the HTTP request (in seconds).
+        :return: {'coords':(lat, lon), 'error': str}.
+        :raises: requests.exceptions.RequestException if an HTTP request error occurs.
+        """
+        
+        # try:
+        token_url = f"https://kadastr.live/search/{cadnum}/"
+        token_headers = CaseInsensitiveDict()
+        token_headers["Accept"] = "application/json"
+        token_headers['User-Agent'] = 'QGIS Kadastr.Live search plugin/0.8.3.0'
+        token_session = requests.session()
+        
+        token_response = token_session.get(token_url, headers = token_headers, timeout = timeout)
+        
+        
+        if token_response.status_code != 200:
+            token_response = token_session.get(token_url, headers = token_headers, timeout = timeout)
+            if token_response.status_code != 200:
+                return {'coords':(None, None), 'error':token_response.status_code}
+        respond = json.loads(token_response.text)
+        json.dumps(respond, indent=4, ensure_ascii=False)
+
+        if 'results' in respond and respond['results']:
+            coords = respond['results'][0]['location']
+            latitude = coords[1]
+            longitude = coords[0]
+            return {'coords':(latitude, longitude)}
+        else:
+            return {'coords':(None, None), 'error':'NoCadnum'}
+            
+        # except requests.exceptions.RequestException as e:
+        #     return {'coords':(None, None), 'error':str(e)}
 
 class LoadByExtent(QgsTask):
     def __init__(self, description, token_url):

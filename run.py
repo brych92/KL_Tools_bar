@@ -10,7 +10,7 @@ import json
 from requests.structures import CaseInsensitiveDict
 import re
 import os
-from .customClasses import LoadByExtent, MultiLineInputDialog
+from .customClasses import LoadByExtent, MultiLineInputDialog, BatchSearchTask
 from typing import cast
 
 if float(Qgis.QGIS_VERSION[:4])>3.27:
@@ -50,6 +50,7 @@ class KL_Search_bar:
         self.iface = iface
 
         self.QVersion = self.get_QGIS_ver()
+        self.batchSearchTask = None
 
         self.prevInput='' 
         self.markers=[]
@@ -59,7 +60,10 @@ class KL_Search_bar:
         self.all_toolbar_actions = []
         
         self.toolbar = self.get_toolbar() 
-        self.toolbar.setToolTip("Пошук ділянки на карті Kadastr.Live за кадастровим номером")
+        self.toolbar.setToolTip("Пошук ділянки на карті Kadastr.Live за кадастровим номером\nКлацніть двічі для пакетного пошуку")
+        
+        #попередження за пакетний пошук        
+        self.warned = False
         
         self.layers_list={#звідси буде братися меню та посилання на шари
             "Карта земельних ділянок":{"name":"Kadastr.Live-Parcels","url":"https://cdn.kadastr.live/tiles/maps/kadastr/land_polygons/{z}/{x}/{y}.pbf","style":"Parcels.qml","extent":(2419945,4501250,5484118,6867501)},#цей запис йде на кнопку
@@ -69,9 +73,9 @@ class KL_Search_bar:
             "sep0":{"name":"*"},
             "Природньо-заповідний фонд":{"name":"Kadastr.Live-PZF","url":"https://vector.kadastr.live/maps/mezhi-prirodo-zapovidnogo-fondu/{z}/{x}/{y}.pbf","style":"PZF.qml","extent":(2419945,4501250,5484118,6867501)},
             "sep1":{"name":"*"},
-            "Карта водних ресурсів Загальна":{"name":"Kadastr.Live-WaterMap","url":"https://cdn.kadastr.live/tiles/maps/dzk_water_map/{z}/{x}/{y}.pbf","style":"Water.qml","extent":(2419945,4501250,5484118,6867501)},
-            "Карта річок":{"name":"Kadastr.Live-RiverLine","url":"https://vector.kadastr.live/maps/richki/{z}/{x}/{y}.pbf","style":"RiverLine.qml","extent":(2419945,4501250,5484118,6867501)},
-            "Басейни та водокористування":{"name":"Kadastr.Live-WaterMap","url":"https://vector.kadastr.live/maps/vodogospodarstva/{z}/{x}/{y}.pbf","style":"vodogospodarstva.qml","extent":(2419945,4501250,5484118,6867501)},
+            "Карта водних ресурсів Загальна":{"name":"Kadastr.Live-WaterMap","url":"https://vector.kadastr.live/maps/vodnii-kadastr/{z}/{x}/{y}.pbf","style":"Water.qml","extent":(2419945,4501250,5484118,6867501)},
+            #"Карта річок":{"name":"Kadastr.Live-RiverLine","url":"https://vector.kadastr.live/maps/richki/{z}/{x}/{y}.pbf","style":"RiverLine.qml","extent":(2419945,4501250,5484118,6867501)},
+            #"Басейни та водокористування":{"name":"Kadastr.Live-WaterMap","url":"https://vector.kadastr.live/maps/vodogospodarstva/{z}/{x}/{y}.pbf","style":"vodogospodarstva.qml","extent":(2419945,4501250,5484118,6867501)},
             "Sep2":{"name":"*"},
             "Функц. призначення м.Київ":{"name":"Kadastr.Live-Kyiv_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-kiiv/{z}/{x}/{y}.pbf","style":"Kyiv_Func.qml", "extent":(3370113,3422430,6490174,6540480)},
             "Функц. призначення м.Житомир":{"name":"Kadastr.Live-Zhutomir_Func","url":"https://vector.kadastr.live/maps/dani-mistobudivnogo-kadastru-misto-zhitomir/{z}/{x}/{y}.pbf","style":"Zhutomir_Func.qml","extent":(3178527,3204686,6477354,6502507)},
@@ -168,7 +172,8 @@ class KL_Search_bar:
     
         for action in self.all_toolbar_actions:
             self.toolbar.addAction(action)
-
+        
+        
     #дозволяє не заморочуватися з двокрапками при вводі кадастрового
     def handle_input(self,text):
         if len(text)<len(self.prevInput):
@@ -566,13 +571,16 @@ class KL_Search_bar:
             return
     
     def batch_search(self):
-        dialog = MultiLineInputDialog(self.iface.mainWindow(), self.SearchWindows_icon)
-        if dialog.exec_() == QDialog.Accepted:
-            text = dialog.get_text()
+        self.dialog = MultiLineInputDialog(self.iface.mainWindow(), self.SearchWindows_icon, plugin = self)
+        if self.dialog.exec_() == QDialog.Accepted:            
+            text = self.dialog.get_text()
             #print(f"Input text:\n{text}")
+            self.batchSearchTask = BatchSearchTask(text, self.iface, plugin = self)
+            QgsApplication.taskManager().addTask(self.batchSearchTask)
+            return
             lines = text.split('\n')
             # Define regex pattern to match cadastral numbers
-            cadnum_pattern = re.compile(r'\b\d{10}:\d{2}:\d{3}:\d{4}\b')            
+            cadnum_pattern = re.compile(r'\b\d{10}:\d{2}:\d{3}:\d{4}\b')
             total_qty = 0
             not_found_cadnums = []
             for line in lines:
@@ -585,13 +593,13 @@ class KL_Search_bar:
                             not_found_cadnums.append(cadnum)
             
             if total_qty == 0:
-                self.iface.messageBar().pushMessage("Помилка!", "В тексті немає кадастрових номерів!", level=Qgis.Warning, duration=5)
+                self.iface.messageBar().pushMessage("Помилка!", "В тексті не знайдено кадастрових номерів!", level=Qgis.Warning, duration=5)
             else:
                 if len(not_found_cadnums) > 0:
                     message = f"Пошук завершено. Знайдено {total_qty-len(not_found_cadnums)} з {total_qty} кадастрових номерів. Відсутні кадастрові номери: {', '.join(not_found_cadnums)}"
                     self.iface.messageBar().pushMessage("Увага!", message, level=Qgis.Warning)
                 else:
-                    self.iface.messageBar().pushMessage("Успіх!", f"Всі {total_qty} кадастрових номерів знайдені!", level=Qgis.Success, duration=5)
+                    self.iface.messageBar().pushMessage("Успіх!", f"Всі {total_qty} кадастрові номери знайдені!", level=Qgis.Success, duration=5)
 
         else:
             pass
@@ -612,14 +620,14 @@ class KL_Search_bar:
                 token_url = f"https://kadastr.live/search/{cadnum}/"
                 token_headers = requests.structures.CaseInsensitiveDict()
                 token_headers["Accept"] = "application/json"
-                token_headers['User-Agent'] = 'QGIS Kadastr.Live search plugin/0.7.3.1'
+                token_headers['User-Agent'] = 'QGIS Kadastr.Live search plugin/0.8.3.0'
                 token_session = requests.session()
                 
-                token_response = token_session.get(token_url, timeout=timeout)
+                token_response = token_session.get(token_url, headers = token_headers, timeout=timeout)
                 
                 if token_response.status_code==500:
                     print("Помилка 500. спроба 2")
-                    token_response = token_session.get(token_url, timeout=timeout)
+                    token_response = token_session.get(token_url, headers = token_headers, timeout=timeout)
                     if token_response.status_code==500:
                         if not batch_search:
                             self.iface.messageBar().pushMessage("Помилка 500","Зачекайте декілька секунд і спробуйте знову.", Qgis.Warning, 5)
