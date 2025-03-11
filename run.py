@@ -688,11 +688,16 @@ class KL_Search_bar:
             canvas.zoomToSelected(layer)
             canvas.zoomScale(canvas.scale()*3)
 
+        if not cadnum and not self.validate_input(self.cadNum):
+            self.iface.messageBar().pushMessage("Неправильний кадастровий номер!", "Введіть правильний кадастровий номер! Можливо поле вводу пусте або не заповнене до кінця", level=Qgis.Warning, duration=5)
+            return False
+        
         if not cadnum:
             cadnum = self.cadNum.text()
 
         if not cadnum and self.validate_input(self.cadNum) or cadnum:
             
+        
             latitude, longitude, area = get_coordinates_from_cadnum(cadnum)
             
             layer = self.select_parcel_layer()
@@ -720,8 +725,7 @@ class KL_Search_bar:
                     self.iface.messageBar().pushMessage("Не вдалося перейти до ділянки!", "Спробуйте натиснути пошук ще раз, або наблизитися до зони пошуку.", level=Qgis.Warning, duration=5)
                     return False
         else:
-            self.iface.messageBar().pushMessage("Неправильний кадастровий номер!", "Введіть правильний кадастровий номер! Можливо поле вводу пусте або не заповнене до кінця", level=Qgis.Warning, duration=5)
-            return False
+            pass
         
     def GetArea(self):
         #print('GetArea')
