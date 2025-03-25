@@ -205,7 +205,7 @@ class BatchSearchTask(QgsTask):
                 return {'coords':(None, None), 'error':token_response.status_code}
         
         respond = json.loads(token_response.text)
-        json.dumps(respond, indent=4, ensure_ascii=False)
+        #json.dumps(respond, indent=4, ensure_ascii=False)
 
         if 'results' in respond and respond['results']:
             coords = respond['results'][0]['location']
