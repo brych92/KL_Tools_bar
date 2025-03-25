@@ -45,27 +45,48 @@ class KL_Search_bar:
             ver3=f'0{ver3}'
         return float(f'{ver1}.{ver2}{ver3}')
 
+    def get_plugin_version(self):
+        # Шлях до файлу metadata.txt
+        metadata_file = os.path.join(self.plugin_dir, 'metadata.txt')
+        
+        # Читаємо файл metadata.txt
+        version = "Unknown"
+        try:
+            with open(metadata_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.startswith('version='):
+                        version = line.strip().split('=')[1]
+                        break
+        except Exception as e:
+            print(f"Помилка при читанні metadata.txt: {e}")
+        
+        return version
+
     def __init__(self, iface):
-        self.marker_remove_timer=QTimer()
         self.iface = iface
 
-        self.QVersion = self.get_QGIS_ver()
-        self.batchSearchTask = None
-
-        self.prevInput='' 
-        self.markers=[]
         self.plugin_dir = os.path.dirname(__file__)
         self.folder_path=os.path.expanduser('~')
+
+
+        self.QVersion = self.get_QGIS_ver() #версія QGIS
+        self.PluginVersion = self.get_plugin_version() #версія плагіну
+        self.batchSearchTask = None #заглушка під таск пакетниого пошуку
+
+        self.prevInput='' 
+        self.marker_remove_timer=QTimer() #таймер для видалення маркерів
+        self.markers=[]
+        #попередження за пакетний пошук        
+        self.warned = False
+
         self.actions = []
         self.all_toolbar_actions = []
         
         self.toolbar = self.get_toolbar() 
         self.toolbar.setToolTip("Пошук ділянки на карті Kadastr.Live за кадастровим номером\nКлацніть двічі для пакетного пошуку")
         
-        #попередження за пакетний пошук        
-        self.warned = False
         
-        self.layers_list={#звідси буде братися меню та посилання на шари
+        self.layers_dict={#звідси буде братися меню та посилання на шари
             "Карта земельних ділянок":{"name":"Kadastr.Live-Parcels","url":"https://cdn.kadastr.live/tiles/maps/kadastr/land_polygons/{z}/{x}/{y}.pbf","style":"Parcels.qml","extent":(2419945,4501250,5484118,6867501)},#цей запис йде на кнопку
             "АТУ":{"name":"Kadastr.Live-ATU","url":"https://vector.kadastr.live/maps/dani-administrativno-teritorialnogo-ustroiu/{z}/{x}/{y}.pbf","style":"ATU.qml","extent":(2419945,4501250,5484118,6867501)},
             "Індексна карта":{"name":"Kadastr.Live-IndexMap","url":"https://vector.kadastr.live/maps/indeksna-kadastrova-karta/{z}/{x}/{y}.pbf","style":"Index.qml","extent":(2419945,4501250,5484118,6867501)},
@@ -130,6 +151,14 @@ class KL_Search_bar:
         self.toolbar.addAction(LandGo)        
         self.actions.append(LandGo)
         
+        #Кнопка перейти в e-constructio
+        icon = QIcon(os.path.join(self.plugin_dir,"Icons","E-constr.png"))
+        buildGO = QAction(icon, "Подивитися інформацію про введену ділянку на e-construction.gov.ua",self.iface.mainWindow())
+        buildGO.triggered.connect(self.BuildGo)
+        buildGO.setEnabled(True)
+        self.toolbar.addAction(buildGO)        
+        self.actions.append(buildGO)
+
         #Конпка показати площу
         icon = QIcon(os.path.join(self.plugin_dir,"Icons","Area.png"))
         GetArea = QAction(icon, "Показати площу введеної ділянки", self.iface.mainWindow())
@@ -147,26 +176,21 @@ class KL_Search_bar:
         self.actions.append(LoadExtent)
         self.LoadExtent=LoadExtent
 
-        #Кнопка шарів з меню
-        icon = QIcon(os.path.join(self.plugin_dir,"Icons","Layers.png"))
-        self.mapMenu = QMenu(self.toolbar)
         #Наповнення меню шарів
-        first_flag=True
-        for layername in self.layers_list:
-            if first_flag:#перший в списку це кнопка
-                self.AddParcelsLayer=QAction(icon,layername)
-                first_flag=False
-            else:                
-                if self.layers_list[layername]["name"]=='*':
-                    self.mapMenu.addSeparator()
-                else:
-                    self.mapMenu.addAction(layername)
-        first_flag=None
+        icon = QIcon(os.path.join(self.plugin_dir,"Icons","Layers.png"))
+        self.mapMenu = QMenu(self.toolbar)        
+        
+        self.AddParcelsLayer=QAction(icon, next(iter(self.layers_dict.keys())))
+        for layername in list(self.layers_dict.keys())[1:]:
+            if self.layers_dict[layername]["name"]=='*':
+                self.mapMenu.addSeparator()
+            else:
+                self.mapMenu.addAction(layername)
         
         self.mapMenu.triggered.connect(self.addLayer)
-        self.AddParcelsLayer.triggered.connect(self.addLayer)        
-        self.AddParcelsLayer.setMenu(self.mapMenu)        
-        self.AddParcelsLayer.setEnabled(True)
+        self.AddParcelsLayer.triggered.connect(self.addLayer)
+        self.AddParcelsLayer.setMenu(self.mapMenu)
+        #self.AddParcelsLayer.setEnabled(True)
         self.toolbar.addAction(self.AddParcelsLayer)
         self.actions.append(self.AddParcelsLayer)
     
@@ -245,7 +269,7 @@ class KL_Search_bar:
         x1, y1, x2, y2 = geometry.boundingBox().toRectF().getCoords()
         token_url = f"https://kadastr.live/export/{y1}/{x1}/{y2}/{x2}"
         
-        self.task = LoadByExtent("Завантаження ділянок", token_url)        
+        self.task = LoadByExtent("Завантаження ділянок", token_url, self)        
         
         self.task.statusChanged.connect(status_changed)
         
@@ -258,10 +282,10 @@ class KL_Search_bar:
             self.searchParcel.setEnabled(True)
             self.cadNum.returnPressed.connect(self.Search)        
         
-        name = self.layers_list[action.text()]["name"]
-        url = self.layers_list[action.text()]["url"]
-        style = self.layers_list[action.text()].get("style")
-        extent = self.layers_list[action.text()].get("extent")
+        name = self.layers_dict[action.text()]["name"]
+        url = self.layers_dict[action.text()]["url"]
+        style = self.layers_dict[action.text()].get("style")
+        extent = self.layers_dict[action.text()].get("extent")
         
         project = QgsProject.instance()
         for layer in project.mapLayers().values():
@@ -310,7 +334,7 @@ class KL_Search_bar:
         return layer
         
     def select_parcel_layer(self):   #повертає посилання на шар земельних ділянок, якщо він відсутній додає його
-        url=self.layers_list[next(iter(self.layers_list))]["url"]
+        url=self.layers_dict[next(iter(self.layers_dict))]["url"]
         layer=self.iface.activeLayer()
         project = QgsProject.instance()
 
@@ -455,9 +479,9 @@ class KL_Search_bar:
             token_url = f"https://kadastr.live/search/{cadnum}/"
             token_headers = requests.structures.CaseInsensitiveDict()
             token_headers["Accept"] = "application/json"
-            token_headers['User-Agent'] = 'QGIS Kadastr.Live search plugin/0.7.3.1'
+            token_headers['User-Agent'] = f'QGIS Kadastr.Live search plugin/{self.PluginVersion}'
             token_session = requests.session()            
-            token_response = token_session.get(token_url, timeout=timeout)
+            token_response = token_session.get(token_url, timeout=timeout, headers = token_headers)
             
             if token_response.status_code==500:
                 print("Помилка 500. спроба 2")
@@ -513,6 +537,42 @@ class KL_Search_bar:
         else:
             return False
     
+    def BuildGo(self):
+        if self.validate_input(self.cadNum) and not self.isControlOrShift():
+            cadnum=self.cadNum.text()
+            QDesktopServices.openUrl(QUrl(f"https://e-construction.gov.ua/search_in_registers?search={cadnum}"))
+            return
+        else:   
+            if not self.QVersion>3.27:      
+                self.iface.messageBar().pushMessage("Відсутня ділянка для перевірки","Введіть правильний кадастровий номер!", level=Qgis.Warning, duration=5)
+                return
+            layer=self.iface.activeLayer()
+            
+            if layer.providerType()=='xyzvectortiles' or layer.providerType()=='vectortile' :
+                if layer.sourcePath()=='https://cdn.kadastr.live/tiles/maps/kadastr/land_polygons/{z}/{x}/{y}.pbf' and layer.selectedFeatureCount()>0:
+                    for feature in layer.selectedFeatures():
+                        cadnum=feature.attribute('cadnum')
+                        QDesktopServices.openUrl(QUrl(f"https://e-construction.gov.ua/search_in_registers?search={cadnum}"))
+                    return
+            
+            elif layer.providerType() == 'ogr' and type(layer) is QgsVectorLayer:
+                for feature in layer.selectedFeatures():
+                    cadnum=feature.attribute('cadnum')
+                    QDesktopServices.openUrl(QUrl(f"https://e-construction.gov.ua/search_in_registers?search={cadnum}"))
+                return
+                
+            elif layer.providerType() == 'memory':
+                field_names = [field.name() for field in layer.fields()]
+                if 'cadnum' in field_names and layer.selectedFeatureCount()>0:                  
+                    for feature in layer.selectedFeatures():
+                        cadnum=feature.attribute('cadnum')
+                        QDesktopServices.openUrl(QUrl(f"https://e-construction.gov.ua/search_in_registers?search={cadnum}"))
+                    return
+            
+            self.iface.messageBar().pushMessage("Помилка", "Введіть правильний кадастровий номер, або виберіть ділянки на карті!", level=Qgis.Warning)
+            return
+    
+
     def LandGo(self):
         if self.validate_input(self.cadNum) and not self.isControlOrShift():
             cadnum=self.cadNum.text()
@@ -574,33 +634,9 @@ class KL_Search_bar:
         self.dialog = MultiLineInputDialog(self.iface.mainWindow(), self.SearchWindows_icon, plugin = self)
         if self.dialog.exec_() == QDialog.Accepted:            
             text = self.dialog.get_text()
-            #print(f"Input text:\n{text}")
             self.batchSearchTask = BatchSearchTask(text, self.iface, plugin = self)
             QgsApplication.taskManager().addTask(self.batchSearchTask)
             return
-            lines = text.split('\n')
-            # Define regex pattern to match cadastral numbers
-            cadnum_pattern = re.compile(r'\b\d{10}:\d{2}:\d{3}:\d{4}\b')
-            total_qty = 0
-            not_found_cadnums = []
-            for line in lines:
-                matches = re.findall(cadnum_pattern, line)
-                if matches:
-                    for cadnum in matches:
-                        total_qty += 1
-                        
-                        if not self.Search(cadnum, True):
-                            not_found_cadnums.append(cadnum)
-            
-            if total_qty == 0:
-                self.iface.messageBar().pushMessage("Помилка!", "В тексті не знайдено кадастрових номерів!", level=Qgis.Warning, duration=5)
-            else:
-                if len(not_found_cadnums) > 0:
-                    message = f"Пошук завершено. Знайдено {total_qty-len(not_found_cadnums)} з {total_qty} кадастрових номерів. Відсутні кадастрові номери: {', '.join(not_found_cadnums)}"
-                    self.iface.messageBar().pushMessage("Увага!", message, level=Qgis.Warning)
-                else:
-                    self.iface.messageBar().pushMessage("Успіх!", f"Всі {total_qty} кадастрові номери знайдені!", level=Qgis.Success, duration=5)
-
         else:
             pass
             #print("Dialog canceled")
@@ -620,7 +656,7 @@ class KL_Search_bar:
                 token_url = f"https://kadastr.live/search/{cadnum}/"
                 token_headers = requests.structures.CaseInsensitiveDict()
                 token_headers["Accept"] = "application/json"
-                token_headers['User-Agent'] = 'QGIS Kadastr.Live search plugin/0.8.3.0'
+                token_headers['User-Agent'] = f'QGIS Kadastr.Live search plugin/{self.PluginVersion}'
                 token_session = requests.session()
                 
                 token_response = token_session.get(token_url, headers = token_headers, timeout=timeout)
