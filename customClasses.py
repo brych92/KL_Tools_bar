@@ -1,4 +1,5 @@
-from qgis.core import QgsTask, QgsApplication, QgsTaskManager, QgsFields, QgsField, QgsJsonUtils, QgsVectorLayer, QgsProject, QgsProject, Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsPointXY, QgsRectangle, QgsFeature
+from qgis.core import QgsTask, QgsFields, QgsField, QgsSettings,QgsJsonUtils, QgsVectorLayer, QgsProject,\
+    QgsProject, Qgis, QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsPointXY, QgsRectangle, QgsFeature
 from qgis.gui import QgisInterface
 from qgis.PyQt.QtCore import QVariant, QTimer
 
@@ -59,10 +60,14 @@ class BatchSearchTask(QgsTask):
         self.results = None
         self.iface = iface
         self.plugin = plugin
+        self.max_retries = int(QgsSettings().value("qgis/defaultTileMaxRetry", 5))
+        self.networ_timeout = int(int(QgsSettings().value("network/network-timeout", 30000))/1000)
 
     def run(self):
         self.setProgress(1)
         cadnums_list = self.parse_text(self.dialog_text)
+        # print("Кадастрові номери:\n ")
+        # print(*cadnums_list, sep='\n')
         if self.isCanceled():
             return False
         if len(cadnums_list) == 0:
@@ -72,7 +77,10 @@ class BatchSearchTask(QgsTask):
         result = {'success': {}, 'error': {}}
         step = 90/len(cadnums_list)
         for cadnum in cadnums_list:
-            output = self.get_coordinates_from_cadnum(cadnum)
+            output = self.get_coordinates_from_cadnum(
+                cadnum = cadnum, 
+                timeout = self.networ_timeout, 
+                request_retries = self.max_retries)
             if 'error' not in output:
                 result['success'][cadnum] = output['coords']
             else:
@@ -94,13 +102,11 @@ class BatchSearchTask(QgsTask):
         """
         
         cadnum_pattern = re.compile(r'\b\d{10}:\d{2}:\d{3}:\d{4}\b')
-        cadnums = []
         matches = re.findall(cadnum_pattern, text)        
         return list(set(matches))
 
     def finished(self, result):
         if self.results is None:
-            print('here')
             self.iface.messageBar().pushMessage("Помилка!", "В тексті не знайдено кадастрових номерів!", level=Qgis.Warning, duration=5)
             return
         
@@ -174,7 +180,7 @@ class BatchSearchTask(QgsTask):
             return True
         
         
-    def get_coordinates_from_cadnum(self, cadnum, timeout=10):
+    def get_coordinates_from_cadnum(self, cadnum, timeout=10, request_retries=3):
         """
         Get latitude and longitude coordinates based on a cadnum.
 
@@ -183,21 +189,21 @@ class BatchSearchTask(QgsTask):
         :return: {'coords':(lat, lon), 'error': str}.
         :raises: requests.exceptions.RequestException if an HTTP request error occurs.
         """
-        
-        # try:
+
         token_url = f"https://kadastr.live/search/{cadnum}/"
         token_headers = CaseInsensitiveDict()
         token_headers["Accept"] = "application/json"
-        token_headers['User-Agent'] = 'QGIS Kadastr.Live search plugin/0.8.3.0'
+        token_headers['User-Agent'] = f'QGIS Kadastr.Live search plugin/{self.plugin.PluginVersion}'
         token_session = requests.session()
         
-        token_response = token_session.get(token_url, headers = token_headers, timeout = timeout)
-        
-        
-        if token_response.status_code != 200:
-            token_response = token_session.get(token_url, headers = token_headers, timeout = timeout)
-            if token_response.status_code != 200:
+        #повторні спроби
+        for i in range(request_retries):
+            token_response = token_session.get(token_url, headers = token_headers, timeout = timeout)        
+            if token_response.status_code == 200:
+                break            
+            if i == request_retries-1:
                 return {'coords':(None, None), 'error':token_response.status_code}
+        
         respond = json.loads(token_response.text)
         json.dumps(respond, indent=4, ensure_ascii=False)
 
@@ -207,17 +213,16 @@ class BatchSearchTask(QgsTask):
             longitude = coords[0]
             return {'coords':(latitude, longitude)}
         else:
-            return {'coords':(None, None), 'error':'NoCadnum'}
-            
-        # except requests.exceptions.RequestException as e:
-        #     return {'coords':(None, None), 'error':str(e)}
+            return {'coords':(None, None), 'error':'Ділянку не знайдено в базі KL'}
+
 
 class LoadByExtent(QgsTask):
-    def __init__(self, description, token_url):
+    def __init__(self, description, token_url, plugin):
         super().__init__(description, QgsTask.CanCancel)        
         self.token_url=token_url
         self.failure_reason=False
         self.last_action=''
+        self.plugin = plugin
     
     def get_failure(self):
         return self.failure_reason
@@ -229,10 +234,10 @@ class LoadByExtent(QgsTask):
         self.setProgress(1)
         token_headers = requests.structures.CaseInsensitiveDict()
         token_headers["Accept"] = "application/json"
-        token_headers['User-Agent'] = 'QGIS Kadastr.Live search plugin/0.7.3.1'
+        token_headers['User-Agent'] = f'QGIS Kadastr.Live search plugin/{self.plugin.PluginVersion}'
         token_session = requests.session()
         self.last_action='Making request'
-        response = token_session.get(self.token_url, stream=True, timeout=30)
+        response = token_session.get(self.token_url, stream=True, timeout=30, headers = token_headers)
         self.last_action=f'request done {response.status_code}'
         if response.status_code != 200:
             self.last_action='Wrong code, return...'
