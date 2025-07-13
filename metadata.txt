@@ -2,7 +2,7 @@
 name=Kadastr.Live Toolbar
 qgisMinimumVersion=3.16
 description=Інтеграція деяких можливостей ресурсу Kadastr.Live в QGIS.
-version=0.8.4.0
+version=0.9.4.0
 author=Стьопа
 email=brych92@gmail.com
 about=	Плагін для спрощення роботи з ресурсом Kadastr.Live в QGIS.
@@ -20,7 +20,7 @@ about=	Плагін для спрощення роботи з ресурсом K
 tracker=https://github.com/brych92/KL_Tools_bar/issues
 repository=https://github.com/brych92/KL_Tools_bar
 icon=icon.png
-experimental=false
+experimental=true
 homepage=https://github.com/brych92/KL_Tools_bar
 changelog=
  Version 0.1:
@@ -98,3 +98,5 @@ changelog=
         Version 0.8.4.0:
  * При пакетному пошуку ділянок застосовуються налаштування часу з'єднання та повторних спроб з налаштувань QGIS
  * Додано функцію переходу в реєстр e-construction
+         Version 0.9.4.0:
+ * Виправлення проблем з доступом

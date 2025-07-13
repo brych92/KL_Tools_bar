@@ -9,6 +9,8 @@ from requests.structures import CaseInsensitiveDict
 import json
 import re
 
+import logging as log
+
 class MultiLineInputDialog(QDialog):
     def __init__(self, parent = None, icon = None, plugin = None):
         super().__init__(parent)
@@ -190,7 +192,7 @@ class BatchSearchTask(QgsTask):
         :raises: requests.exceptions.RequestException if an HTTP request error occurs.
         """
 
-        token_url = f"https://kadastr.live/search/{cadnum}/"
+        token_url = f"https://{self.plugin.baseurl}/search/{cadnum}/"
         token_headers = CaseInsensitiveDict()
         token_headers["Accept"] = "application/json"
         token_headers['User-Agent'] = f'QGIS Kadastr.Live search plugin/{self.plugin.PluginVersion}'
@@ -216,15 +218,17 @@ class BatchSearchTask(QgsTask):
             return {'coords':(None, None), 'error':'Ділянку не знайдено в базі KL'}
 
 
+
+
 class LoadByExtent(QgsTask):
     def __init__(self, description, token_url, plugin):
         super().__init__(description, QgsTask.CanCancel)        
         self.token_url=token_url
-        self.failure_reason=False
+        self.failure_reason=''
         self.last_action=''
         self.plugin = plugin
     
-    def get_failure(self):
+    def get_failure(self) -> str:
         return self.failure_reason
         
     def get_last_action(self):
@@ -248,7 +252,8 @@ class LoadByExtent(QgsTask):
         progress=3
         self.setProgress(progress)
         self.last_action='counting total size'
-        total_size = int(response.headers.get('content-length', 0))
+        print(response.headers.get('content-length', 1))
+        total_size = int(response.headers.get('content-length', 1))
         step=(70-progress)/(total_size/1024)
         self.last_action='reading first chunk of data'
         i=1
@@ -299,16 +304,6 @@ class LoadByExtent(QgsTask):
         a=QgsField("address", QVariant.String)
         a.setAlias('Адреса земельної ділянки')
         fields.append(a)
-        # fields.append(QgsField("category", QVariant.String))
-        # fields.append(QgsField("purpose_code", QVariant.String))
-        # fields.append(QgsField("purpose", QVariant.String))
-        # fields.append(QgsField("use", QVariant.String))
-        # fields.append(QgsField("area", QVariant.String))
-        # fields.append(QgsField("unit_area", QVariant.String))
-        # fields.append(QgsField("ownershipcode", QVariant.String))
-        # fields.append(QgsField("ownership", QVariant.String))
-        # fields.append(QgsField("id", QVariant.String))  
-        # fields.append(QgsField("address", QVariant.String)) 
               
         progress += 10
         self.setProgress(progress)
